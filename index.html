@@ -1,0 +1,251 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Asympta 支援資訊、常見問題與聯絡方式。">
+  <meta name="theme-color" content="#f3f0e7">
+  <title>Asympta 支援</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --paper: #f3f0e7;
+      --paper-deep: #e8e3d7;
+      --ink: #26303f;
+      --muted: #667080;
+      --line: rgba(86, 112, 151, .28);
+      --blue: #5f7faf;
+      --blue-soft: rgba(95, 127, 175, .12);
+      --shadow: rgba(38, 48, 63, .10);
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      color: var(--ink);
+      background:
+        radial-gradient(1100px 700px at 78% -10%, rgba(255,255,255,.78), transparent 58%),
+        radial-gradient(760px 900px at -8% 52%, rgba(104,129,103,.10), transparent 66%),
+        linear-gradient(140deg, var(--paper) 0%, #f8f5ec 49%, var(--paper-deep) 100%);
+      font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "PingFang TC", "Noto Sans TC", sans-serif;
+      line-height: 1.7;
+    }
+
+    body::before {
+      content: "";
+      position: fixed;
+      inset: 0;
+      pointer-events: none;
+      opacity: .2;
+      background-image:
+        linear-gradient(96deg, transparent 0 48%, rgba(61,71,82,.04) 49%, transparent 51%),
+        radial-gradient(circle at 24% 26%, rgba(72,94,74,.12) 0 2px, transparent 3px),
+        radial-gradient(circle at 78% 64%, rgba(72,94,74,.09) 0 2px, transparent 3px);
+      background-size: 220px 220px, 74px 82px, 91px 87px;
+      mix-blend-mode: multiply;
+    }
+
+    a { color: var(--blue); text-underline-offset: .2em; }
+    a:hover { color: #3f6396; }
+
+    .shell {
+      position: relative;
+      width: min(980px, calc(100% - 40px));
+      margin: 0 auto;
+      padding: 36px 0 72px;
+    }
+
+    .nav {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 24px;
+      padding: 8px 0 26px;
+    }
+
+    .brand {
+      display: inline-flex;
+      align-items: center;
+      gap: 12px;
+      color: var(--ink);
+      text-decoration: none;
+      letter-spacing: .17em;
+      font-size: .98rem;
+      font-weight: 700;
+    }
+
+    .mark {
+      width: 38px;
+      height: 26px;
+      position: relative;
+      display: inline-block;
+    }
+
+    .mark::before,
+    .mark::after {
+      content: "";
+      position: absolute;
+      border: 2px solid var(--blue);
+      border-radius: 55% 45% 58% 42%;
+      transform: rotate(-22deg);
+    }
+
+    .mark::before { width: 15px; height: 25px; left: 4px; top: -1px; }
+    .mark::after { width: 28px; height: 12px; left: 9px; top: 10px; transform: rotate(-12deg); }
+
+    .nav-links { display: flex; gap: 20px; font-size: .9rem; }
+    .nav-links a { color: var(--muted); text-decoration: none; }
+
+    .hero {
+      padding: clamp(52px, 9vw, 94px) 0 clamp(48px, 8vw, 76px);
+      border-top: 1px solid var(--line);
+      border-bottom: 1px solid var(--line);
+    }
+
+    .eyebrow {
+      margin: 0 0 18px;
+      color: var(--blue);
+      font-family: ui-monospace, "SFMono-Regular", Menlo, monospace;
+      font-size: .78rem;
+      letter-spacing: .18em;
+      text-transform: uppercase;
+    }
+
+    h1, h2 { margin: 0; font-weight: 600; letter-spacing: -.025em; }
+    h1 { max-width: 760px; font-size: clamp(2.6rem, 7vw, 5.3rem); line-height: 1.1; }
+    h2 { font-size: clamp(1.55rem, 3.5vw, 2.2rem); }
+
+    .lead {
+      max-width: 660px;
+      margin: 24px 0 0;
+      color: var(--muted);
+      font-size: clamp(1.04rem, 2vw, 1.22rem);
+    }
+
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 18px;
+      padding: 46px 0 12px;
+    }
+
+    .card {
+      min-height: 218px;
+      padding: 28px;
+      border: 1px solid var(--line);
+      border-radius: 22px;
+      background: rgba(255,255,255,.36);
+      box-shadow: 0 18px 54px var(--shadow);
+      backdrop-filter: blur(12px);
+    }
+
+    .number {
+      display: inline-grid;
+      place-items: center;
+      width: 30px;
+      height: 30px;
+      margin-bottom: 22px;
+      border-radius: 50%;
+      background: var(--blue-soft);
+      color: var(--blue);
+      font: 600 .76rem ui-monospace, "SFMono-Regular", Menlo, monospace;
+    }
+
+    .card h2 { font-size: 1.15rem; letter-spacing: 0; }
+    .card p { margin: 12px 0 0; color: var(--muted); }
+
+    .contact {
+      margin-top: 34px;
+      padding: clamp(30px, 6vw, 52px);
+      border-radius: 26px;
+      background: var(--ink);
+      color: #f7f4eb;
+      box-shadow: 0 24px 70px rgba(38,48,63,.2);
+    }
+
+    .contact p { max-width: 660px; color: rgba(247,244,235,.72); }
+    .contact a { color: #b7cae8; }
+
+    footer {
+      display: flex;
+      justify-content: space-between;
+      gap: 24px;
+      padding: 34px 2px 0;
+      color: var(--muted);
+      font-size: .84rem;
+    }
+
+    footer p { margin: 0; }
+
+    @media (max-width: 720px) {
+      .shell { width: min(100% - 28px, 980px); padding-top: 20px; }
+      .nav-links { gap: 12px; }
+      .grid { grid-template-columns: 1fr; }
+      .card { min-height: 0; }
+      footer { flex-direction: column; }
+    }
+
+    @media (prefers-reduced-motion: no-preference) {
+      .card { transition: transform .25s ease, box-shadow .25s ease; }
+      .card:hover { transform: translateY(-3px); box-shadow: 0 22px 60px rgba(38,48,63,.14); }
+    }
+  </style>
+</head>
+<body>
+  <main class="shell">
+    <nav class="nav" aria-label="主要導覽">
+      <a class="brand" href="./" aria-label="Asympta 支援首頁"><span class="mark" aria-hidden="true"></span>ASYMPTA</a>
+      <div class="nav-links">
+        <a href="#support">支援</a>
+        <a href="privacy/">私隱</a>
+      </div>
+    </nav>
+
+    <header class="hero">
+      <p class="eyebrow">Support · 支援</p>
+      <h1>安靜地寫，<br>讓想法自然浮沉。</h1>
+      <p class="lead">Asympta 是一張以本機儲存為先的手寫畫布。以下是開始使用、風聲與觸感、筆跡及資料保存的簡要說明。</p>
+    </header>
+
+    <section class="grid" id="support" aria-label="常見問題">
+      <article class="card">
+        <span class="number">01</span>
+        <h2>書寫與縮放</h2>
+        <p>可使用 Apple Pencil 或手指書寫。筆畫的粗幼與平滑度會按目前縮放比例調整；如要修改內容，可使用橡皮擦、復原或移動工具。</p>
+      </article>
+
+      <article class="card">
+        <span class="number">02</span>
+        <h2>風聲與觸感</h2>
+        <p>在風聲選單調整音量，並可選擇讓風聲在背景繼續播放。觸感只會在支援 Core Haptics 的 iPhone 前景中回應；iPad 及背景狀態不會提供觸感。</p>
+      </article>
+
+      <article class="card">
+        <span class="number">03</span>
+        <h2>文字與聚焦</h2>
+        <p>選擇文字工具後點擊紙面，以 −／＋ 調整預設字體大小。雙擊已淡入的內容可移到中央並提高清晰度；再次雙擊或開始其他操作便會返回原位。</p>
+      </article>
+
+      <article class="card">
+        <span class="number">04</span>
+        <h2>資料與裝置</h2>
+        <p>無需帳戶或網絡；內容與偏好只保留在裝置上。刪除 App 可能會同時移除本機內容，請在刪除前確認已保留所需資料。最低系統版本為 iOS／iPadOS 17。</p>
+      </article>
+    </section>
+
+    <section class="contact" aria-labelledby="contact-title">
+      <p class="eyebrow">EverFormLab</p>
+      <h2 id="contact-title">需要協助？</h2>
+      <p>請電郵至 <a href="mailto:hello@everformlab.com">hello@everformlab.com</a>，並附上裝置型號、系統版本、問題重現步驟，以及不含私人內容的畫面截圖（如適用）。</p>
+      <p><a href="privacy/">閱讀 Asympta 私隱政策</a></p>
+    </section>
+
+    <footer>
+      <p>© 2026 Ka Ho Lau. All rights reserved.</p>
+      <p>Asympta · Local-first writing canvas</p>
+    </footer>
+  </main>
+</body>
+</html>
