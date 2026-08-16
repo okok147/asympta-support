@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="description" content="Asympta 私隱政策：App 不收集、不追蹤或傳送使用者資料。">
+  <meta name="description" content="Asympta 私隱政策：本機優先、可選 iCloud 或 Google Drive 同步，並且不含廣告或追蹤。">
   <meta name="theme-color" content="#f3f0e7">
   <title>Asympta 私隱政策</title>
   <style>
@@ -84,28 +84,50 @@
     <header>
       <p class="eyebrow">Privacy · 私隱</p>
       <h1>Asympta 私隱政策</h1>
-      <p class="updated">生效及最後更新日期：2026 年 8 月 16 日</p>
+      <p class="updated">生效及最後更新日期：2026 年 8 月 17 日</p>
     </header>
 
     <article>
       <section>
         <h2>概要</h2>
-        <p>Asympta 以私隱為設計原則。App 無需建立帳戶或連接網絡，亦不收集、追蹤、出售或與第三方分享個人資料。</p>
+        <p>Asympta 以本機優先及資料最少化為設計原則。免費版毋須帳戶或網絡；只有使用者主動啟用永久版同步、登入、購買、邀請或電郵支援時，才會使用相應的 Apple、iCloud、Google 或 EverFormLab 服務。</p>
+        <p>Asympta 不含廣告、第三方分析或跨 App／網站追蹤，亦不出售個人資料。</p>
       </section>
 
       <section>
-        <h2>App 內的資料</h2>
+        <h2>本機資料</h2>
         <ul>
           <li>手寫筆跡、文字、世界名稱及使用偏好只儲存在使用者的裝置上。</li>
-          <li>App 不包含廣告、分析、追蹤或第三方資料收集 SDK。</li>
-          <li>App 不要求姓名、電郵、電話、位置、相片、聯絡人或登入資料。</li>
-          <li>刪除 App 可能會移除其本機資料；Asympta 不會在遠端伺服器保留副本。</li>
+          <li>除非使用者自行啟用下述雲端同步，App 不會把畫布內容傳離裝置。</li>
+          <li>Google 登入權杖、Apple 登入識別碼及其他敏感憑證只保存於裝置的系統鑰匙圈。</li>
+          <li>刪除 App 可能會移除本機資料；如已啟用同步，雲端副本須按相應服務的方式管理或刪除。</li>
         </ul>
       </section>
 
       <section>
-        <h2>系統功能</h2>
-        <p>Asympta 使用裝置上的音訊、觸感、時間及本機儲存功能來提供風聲、前景觸感、日光模擬與內容保存。這些功能不會把使用資料傳送給開發者。背景風聲是使用者可自行開關的選項；iOS 在 App 進入背景後會暫停 Core Haptics。</p>
+        <h2>Apple 登入、iCloud 與購買</h2>
+        <ul>
+          <li>Apple 登入只用來建立私隱友善的裝置登入狀態；Asympta 不要求姓名或電郵權限。</li>
+          <li>選擇 iCloud 同步時，畫布封存檔會存入使用者 Apple ID 對應的私人 CloudKit 資料庫，並由 Apple 處理傳輸及儲存。</li>
+          <li>永久解鎖及優惠兌換由 Apple StoreKit 與 App Store 處理。EverFormLab 不會收到信用卡或完整付款資料。</li>
+        </ul>
+      </section>
+
+      <section>
+        <h2>Google Drive 同步</h2>
+        <p>只有使用者選擇連接 Google 時，Asympta 才會開啟 Google 的授權流程。App 只要求 Google Drive 隱藏 App 資料夾（<code>drive.appdata</code>）權限，不要求姓名、電郵、一般 Drive 檔案或聯絡人。畫布封存檔會存入該隱藏資料夾，並按 Google 的條款與私隱政策由 Google 處理。</p>
+        <p>Asympta 只會讀寫自己在該隱藏資料夾建立的封存檔，不會把 Google 使用者資料用於廣告、分析、建立信用資料或轉售。Asympta 對 Google API 所取得資料的使用及轉移遵守 <a href="https://developers.google.com/terms/api-services-user-data-policy">Google API Services User Data Policy</a>，包括 Limited Use 要求。</p>
+        <p>使用者可在 App 內登出 Google，並可在 Google 帳戶的第三方連線設定撤銷權限；如要刪除雲端副本，可在 Google Drive 的「管理應用程式」移除 Asympta 的隱藏應用程式資料。</p>
+      </section>
+
+      <section>
+        <h2>邀請功能</h2>
+        <p>永久版使用者建立折扣邀請時，App 會把所選名額及經 App Store 驗證的假名交易識別碼傳送至 EverFormLab 邀請服務，用以確認購買、限制每位購買者最多兩個邀請，以及防止重複領取。此流程不要求姓名、電郵或電話，識別碼只會保留至提供及保障邀請功能所需的期間。</p>
+      </section>
+
+      <section>
+        <h2>裝置系統功能</h2>
+        <p>Asympta 使用裝置上的音訊、觸感、時間及本機儲存功能來提供風聲、前景觸感、日光模擬與內容保存。這些本機功能不會把使用資料傳送給開發者。背景風聲是使用者可自行開關的選項；iOS 在 App 進入背景後會暫停 Core Haptics。</p>
       </section>
 
       <section>
@@ -119,8 +141,20 @@
       </section>
 
       <section>
+        <h2>保留、刪除與安全</h2>
+        <ul>
+          <li>本機內容會保留至使用者在 App 內刪除內容或移除 App；是否能從裝置備份恢復由 Apple 的裝置備份設定決定。</li>
+          <li>iCloud 或 Google Drive 封存檔會保留至使用者透過相應服務移除雲端資料。單純在 App 內登出或取消同步不會自動刪除雲端副本。</li>
+          <li>邀請服務會在邀請計劃運作期間保留假名交易識別碼、名額及已分配優惠碼記錄，以維持每次購買最多兩個名額、防止重複發放及處理濫用；優惠碼會加密儲存。</li>
+          <li>支援郵件只會保留至處理問題及合理跟進所需的期間，或法律另有要求的期間。</li>
+          <li>網絡要求使用 HTTPS；Google 權杖及 Apple 登入識別碼儲存在系統鑰匙圈，iCloud 內容使用私人 CloudKit 資料庫。</li>
+        </ul>
+        <p>如要查詢或要求刪除 EverFormLab 控制的邀請或支援資料，請以購買所用裝置及相關資料為依據聯絡下方電郵。為免刪除錯誤資料，我們可能需要先核對對應的假名交易記錄；刪除邀請記錄可能令已發出連結失效或無法再次使用該名額。</p>
+      </section>
+
+      <section>
         <h2>政策更新</h2>
-        <p>如 Asympta 的資料處理方式改變，本頁會在新做法生效前更新日期與內容。現時版本不收集任何 App 使用者資料。</p>
+        <p>如 Asympta 的資料處理方式改變，本頁會在新做法生效前更新日期與內容。使用者可繼續以免費本機模式使用核心書寫功能，而毋須啟用任何雲端服務。</p>
       </section>
 
       <section>
