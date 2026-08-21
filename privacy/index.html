@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="description" content="Asympta Privacy Policy: local-first by default, optional iCloud + Google Drive dual backup, and no ads or tracking.">
+  <meta name="description" content="Asympta Privacy Policy: local-first by default, free iCloud backup, optional Lifetime Google Drive backup, and no ads or tracking.">
   <meta name="theme-color" content="#f3f0e7">
   <title>Asympta Privacy Policy</title>
   <style>
@@ -131,7 +131,7 @@
       <article>
         <section>
           <h2>Overview</h2>
-          <p>Asympta is designed around local-first storage and data minimization. All creative features can be used locally for free, without an account or network connection. Apple, Google, or EverFormLab services are used only when you intentionally connect iCloud or Google, enable paid dual backup, claim purchaser discount invitations, or email support.</p>
+          <p>Asympta is designed around local-first storage and data minimization. All creative features can be used locally for free, without an app account. Apple, Google, or EverFormLab services are used only when you intentionally use iCloud backup, connect Google Drive, enable Lifetime cross-provider backup, claim purchaser discount invitations, or email support.</p>
           <p>Asympta contains no advertising, third-party analytics, or cross-app / cross-site tracking, and does not sell personal data.</p>
         </section>
 
@@ -139,7 +139,7 @@
           <h2>Local data</h2>
           <ul>
             <li>Handwriting, text, world names, and preferences are stored only on your device by default.</li>
-            <li>Unless you enable the paid dual backup described below, the app does not transmit canvas content off your device.</li>
+            <li>If you use free iCloud backup, the canvas archive is transmitted to your private CloudKit database through Apple. Google Drive receives canvas archives only when Lifetime is active and you choose to connect Google Drive.</li>
             <li>Google Drive authorization tokens and other sensitive credentials are stored only in the device system Keychain.</li>
             <li>Deleting the app may remove local data. If sync has been enabled, cloud copies must be managed or deleted through the applicable service.</li>
           </ul>
@@ -149,14 +149,14 @@
           <h2>iCloud &amp; purchases</h2>
           <ul>
             <li>Asympta checks whether iCloud is available on the device. The app does not request the name or email address of your Apple Account.</li>
-            <li>When Lifetime dual backup is enabled, the canvas archive is stored in the private CloudKit database associated with your Apple Account, with transfer and storage handled by Apple.</li>
-            <li>Lifetime unlocks and offer redemptions are processed by Apple StoreKit and the App Store. EverFormLab does not receive credit-card details or complete payment information.</li>
+            <li>When iCloud backup is available and used, the canvas archive is stored in the private CloudKit database associated with your Apple Account, with transfer and storage handled by Apple. iCloud backup is free and is not part of the paid Lifetime entitlement.</li>
+            <li>Lifetime unlocks Google Drive backup, cross-provider merge/recovery, and purchaser invitations. Purchases and offer redemptions are processed by Apple StoreKit and the App Store. EverFormLab does not receive credit-card details or complete payment information.</li>
           </ul>
         </section>
 
         <section>
           <h2>Google Drive sync</h2>
-          <p>Asympta starts Google's authorization flow only when you choose to connect Google. The app requests only access to the hidden Google Drive App Data folder (<code>drive.appdata</code>); it does not request your name, email address, general Drive files, or contacts. When Lifetime dual backup is enabled, the canvas archive is stored both in that hidden folder and in your private CloudKit database, subject to Google's and Apple's terms and privacy policies.</p>
+          <p>Asympta starts Google's authorization flow only when you choose to connect Google. The app requests only access to the hidden Google Drive App Data folder (<code>drive.appdata</code>); it does not request your name, email address, general Drive files, or contacts. When Lifetime is active, Google Drive can participate in backup and cross-provider reconciliation. If iCloud is also available, the converged archive may be stored both in the hidden Google Drive folder and in your private CloudKit database, subject to Google's and Apple's terms and privacy policies.</p>
           <p>Asympta reads and writes only the archives it creates in that hidden folder. Google user data obtained through the API is not used for advertising, analytics, credit profiling, or resale. Asympta's use and transfer of information received from Google APIs complies with the <a href="https://developers.google.com/terms/api-services-user-data-policy">Google API Services User Data Policy</a>, including the Limited Use requirements.</p>
           <p>You can sign out of Google within the app and revoke access from the third-party connections settings of your Google Account. To delete cloud copies stored by Asympta in Google Drive, remove Asympta's hidden application data from Google Drive's Manage Apps settings.</p>
         </section>
@@ -215,7 +215,7 @@
       <article>
         <section>
           <h2>概要</h2>
-          <p>Asympta 以本機優先及資料最少化為設計原則。所有創作功能均可免費在本機使用，毋須帳戶或網絡；只有使用者主動連接 iCloud／Google、啟用付費雙重備份、領取購買者折扣邀請或電郵支援時，才會使用相應的 Apple、Google 或 EverFormLab 服務。</p>
+          <p>Asympta 以本機優先及資料最少化為設計原則。所有創作功能均可免費在本機使用，毋須 App 帳戶；只有使用者主動使用 iCloud 備份、連接 Google Drive、啟用 Lifetime 雙端備份、領取購買者折扣邀請或電郵支援時，才會使用相應的 Apple、Google 或 EverFormLab 服務。</p>
           <p>Asympta 不含廣告、第三方分析或跨 App／網站追蹤，亦不出售個人資料。</p>
         </section>
 
@@ -223,7 +223,7 @@
           <h2>本機資料</h2>
           <ul>
             <li>手寫筆跡、文字、世界名稱及使用偏好預設只儲存在使用者的裝置上。</li>
-            <li>除非使用者自行啟用下述付費雙重備份，App 不會把畫布內容傳離裝置。</li>
+            <li>如使用免費 iCloud 備份，畫布封存檔會經 Apple 傳送至使用者的私人 CloudKit 資料庫；只有 Lifetime 已啟用且使用者主動連接 Google Drive 時，Google Drive 才會收到畫布封存檔。</li>
             <li>Google Drive 授權權杖及其他敏感憑證只保存於裝置的系統鑰匙圈。</li>
             <li>刪除 App 可能會移除本機資料；如已啟用同步，雲端副本須按相應服務的方式管理或刪除。</li>
           </ul>
@@ -233,14 +233,14 @@
           <h2>iCloud 與購買</h2>
           <ul>
             <li>Asympta 會檢查此裝置能否使用 iCloud；App 不會要求 Apple Account 的姓名或電郵。</li>
-            <li>啟用 Lifetime 雙重備份時，畫布封存檔會存入使用者 Apple Account 對應的私人 CloudKit 資料庫，並由 Apple 處理傳輸及儲存。</li>
-            <li>永久解鎖及優惠兌換由 Apple StoreKit 與 App Store 處理。EverFormLab 不會收到信用卡或完整付款資料。</li>
+            <li>裝置可使用並啟用 iCloud 備份時，畫布封存檔會存入使用者 Apple Account 對應的私人 CloudKit 資料庫，並由 Apple 處理傳輸及儲存。iCloud 備份免費，並不屬於付費 Lifetime entitlement。</li>
+            <li>Lifetime 解鎖 Google Drive 備份、雙端合併／故障復原及購買者邀請；購買及優惠兌換由 Apple StoreKit 與 App Store 處理。EverFormLab 不會收到信用卡或完整付款資料。</li>
           </ul>
         </section>
 
         <section>
           <h2>Google Drive 同步</h2>
-          <p>只有使用者選擇連接 Google 時，Asympta 才會開啟 Google 的授權流程。App 只要求 Google Drive 隱藏 App 資料夾（<code>drive.appdata</code>）權限，不要求姓名、電郵、一般 Drive 檔案或聯絡人。啟用 Lifetime 雙重備份時，畫布封存檔會同時存入該隱藏資料夾及使用者的私人 CloudKit 資料庫，並按 Google 及 Apple 的條款與私隱政策處理。</p>
+          <p>只有使用者選擇連接 Google 時，Asympta 才會開啟 Google 的授權流程。App 只要求 Google Drive 隱藏 App 資料夾（<code>drive.appdata</code>）權限，不要求姓名、電郵、一般 Drive 檔案或聯絡人。Lifetime 已啟用時，Google Drive 可加入備份與雙端合併；如 iCloud 同時可用，合併後的封存檔可同時存入該隱藏資料夾及使用者的私人 CloudKit 資料庫，並按 Google 及 Apple 的條款與私隱政策處理。</p>
           <p>Asympta 只會讀寫自己在該隱藏資料夾建立的封存檔，不會把 Google 使用者資料用於廣告、分析、建立信用資料或轉售。Asympta 對 Google API 所取得資料的使用及轉移遵守 <a href="https://developers.google.com/terms/api-services-user-data-policy">Google API Services User Data Policy</a>，包括 Limited Use 要求。</p>
           <p>使用者可在 App 內登出 Google，並可在 Google 帳戶的第三方連線設定撤銷權限；如要刪除雲端副本，可在 Google Drive 的「管理應用程式」移除 Asympta 的隱藏應用程式資料。</p>
         </section>
@@ -296,8 +296,8 @@
     (() => {
       const storageKey = 'asympta-language';
       const descriptions = {
-        en: 'Asympta Privacy Policy: local-first by default, optional iCloud + Google Drive dual backup, and no ads or tracking.',
-        'zh-Hant': 'Asympta 私隱政策：本機優先、可選 iCloud + Google Drive 雙重備份，並且不含廣告或追蹤。'
+        en: 'Asympta Privacy Policy: local-first by default, free iCloud backup, optional Lifetime Google Drive backup, and no ads or tracking.',
+        'zh-Hant': 'Asympta 私隱政策：本機優先、免費 iCloud 備份、可選 Lifetime Google Drive 備份，並且不含廣告或追蹤。'
       };
       const titles = {
         en: 'Asympta Privacy Policy',
