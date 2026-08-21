@@ -1,11 +1,11 @@
 <!doctype html>
-<html lang="zh-Hant">
+<html lang="en">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="description" content="Asympta 私隱政策：本機優先、可選 iCloud + Google Drive 雙重備份，並且不含廣告或追蹤。">
+  <meta name="description" content="Asympta Privacy Policy: local-first by default, optional iCloud + Google Drive dual backup, and no ads or tracking.">
   <meta name="theme-color" content="#f3f0e7">
-  <title>Asympta 私隱政策</title>
+  <title>Asympta Privacy Policy</title>
   <style>
     :root {
       color-scheme: light;
@@ -37,12 +37,45 @@
       padding: 34px 0 72px;
     }
 
-    .back {
-      display: inline-block;
+    .topbar {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 20px;
       margin-bottom: 44px;
+    }
+
+    .back {
       color: var(--muted);
       text-decoration: none;
       font-size: .92rem;
+    }
+
+    .language-switch {
+      display: inline-flex;
+      align-items: center;
+      gap: 3px;
+      padding: 3px;
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      background: rgba(255,255,255,.36);
+    }
+
+    .lang-button {
+      border: 0;
+      border-radius: 999px;
+      padding: 6px 10px;
+      color: var(--muted);
+      background: transparent;
+      font: inherit;
+      font-size: .78rem;
+      cursor: pointer;
+    }
+
+    .lang-button[aria-pressed="true"] {
+      color: var(--ink);
+      background: rgba(255,255,255,.86);
+      box-shadow: 0 1px 7px rgba(38,48,63,.08);
     }
 
     header {
@@ -75,95 +108,231 @@
     li + li { margin-top: 7px; }
 
     footer { padding-top: 30px; color: var(--muted); font-size: .84rem; }
+    [hidden] { display: none !important; }
   </style>
 </head>
 <body>
   <main class="shell">
-    <a class="back" href="../">← 返回 Asympta 支援</a>
+    <div class="topbar">
+      <a class="back" href="../"><span data-lang-label="en">← Back to Asympta Support</span><span data-lang-label="zh-Hant" hidden>← 返回 Asympta 支援</span></a>
+      <div class="language-switch" role="group" aria-label="Language">
+        <button class="lang-button" type="button" data-set-lang="en" aria-pressed="true">EN</button>
+        <button class="lang-button" type="button" data-set-lang="zh-Hant" aria-pressed="false">繁中</button>
+      </div>
+    </div>
 
-    <header>
-      <p class="eyebrow">Privacy · 私隱</p>
-      <h1>Asympta 私隱政策</h1>
-      <p class="updated">生效及最後更新日期：2026 年 8 月 21 日</p>
-    </header>
+    <div data-lang="en">
+      <header>
+        <p class="eyebrow">Privacy</p>
+        <h1>Asympta Privacy Policy</h1>
+        <p class="updated">Effective and last updated: August 21, 2026</p>
+      </header>
 
-    <article>
-      <section>
-        <h2>概要</h2>
-        <p>Asympta 以本機優先及資料最少化為設計原則。所有創作功能均可免費在本機使用，毋須帳戶或網絡；只有使用者主動連接 iCloud／Google、啟用付費雙重備份、領取購買者折扣邀請或電郵支援時，才會使用相應的 Apple、Google 或 EverFormLab 服務。</p>
-        <p>Asympta 不含廣告、第三方分析或跨 App／網站追蹤，亦不出售個人資料。</p>
-      </section>
+      <article>
+        <section>
+          <h2>Overview</h2>
+          <p>Asympta is designed around local-first storage and data minimization. All creative features can be used locally for free, without an account or network connection. Apple, Google, or EverFormLab services are used only when you intentionally connect iCloud or Google, enable paid dual backup, claim purchaser discount invitations, or email support.</p>
+          <p>Asympta contains no advertising, third-party analytics, or cross-app / cross-site tracking, and does not sell personal data.</p>
+        </section>
 
-      <section>
-        <h2>本機資料</h2>
-        <ul>
-          <li>手寫筆跡、文字、世界名稱及使用偏好預設只儲存在使用者的裝置上。</li>
-          <li>除非使用者自行啟用下述付費雙重備份，App 不會把畫布內容傳離裝置。</li>
-          <li>Google Drive 授權權杖及其他敏感憑證只保存於裝置的系統鑰匙圈。</li>
-          <li>刪除 App 可能會移除本機資料；如已啟用同步，雲端副本須按相應服務的方式管理或刪除。</li>
-        </ul>
-      </section>
+        <section>
+          <h2>Local data</h2>
+          <ul>
+            <li>Handwriting, text, world names, and preferences are stored only on your device by default.</li>
+            <li>Unless you enable the paid dual backup described below, the app does not transmit canvas content off your device.</li>
+            <li>Google Drive authorization tokens and other sensitive credentials are stored only in the device system Keychain.</li>
+            <li>Deleting the app may remove local data. If sync has been enabled, cloud copies must be managed or deleted through the applicable service.</li>
+          </ul>
+        </section>
 
-      <section>
-        <h2>iCloud 與購買</h2>
-        <ul>
-          <li>Asympta 會檢查此裝置能否使用 iCloud；App 不會要求 Apple Account 的姓名或電郵。</li>
-          <li>啟用 Lifetime 雙重備份時，畫布封存檔會存入使用者 Apple Account 對應的私人 CloudKit 資料庫，並由 Apple 處理傳輸及儲存。</li>
-          <li>永久解鎖及優惠兌換由 Apple StoreKit 與 App Store 處理。EverFormLab 不會收到信用卡或完整付款資料。</li>
-        </ul>
-      </section>
+        <section>
+          <h2>iCloud &amp; purchases</h2>
+          <ul>
+            <li>Asympta checks whether iCloud is available on the device. The app does not request the name or email address of your Apple Account.</li>
+            <li>When Lifetime dual backup is enabled, the canvas archive is stored in the private CloudKit database associated with your Apple Account, with transfer and storage handled by Apple.</li>
+            <li>Lifetime unlocks and offer redemptions are processed by Apple StoreKit and the App Store. EverFormLab does not receive credit-card details or complete payment information.</li>
+          </ul>
+        </section>
 
-      <section>
-        <h2>Google Drive 同步</h2>
-        <p>只有使用者選擇連接 Google 時，Asympta 才會開啟 Google 的授權流程。App 只要求 Google Drive 隱藏 App 資料夾（<code>drive.appdata</code>）權限，不要求姓名、電郵、一般 Drive 檔案或聯絡人。啟用 Lifetime 雙重備份時，畫布封存檔會同時存入該隱藏資料夾及使用者的私人 CloudKit 資料庫，並按 Google 及 Apple 的條款與私隱政策處理。</p>
-        <p>Asympta 只會讀寫自己在該隱藏資料夾建立的封存檔，不會把 Google 使用者資料用於廣告、分析、建立信用資料或轉售。Asympta 對 Google API 所取得資料的使用及轉移遵守 <a href="https://developers.google.com/terms/api-services-user-data-policy">Google API Services User Data Policy</a>，包括 Limited Use 要求。</p>
-        <p>使用者可在 App 內登出 Google，並可在 Google 帳戶的第三方連線設定撤銷權限；如要刪除雲端副本，可在 Google Drive 的「管理應用程式」移除 Asympta 的隱藏應用程式資料。</p>
-      </section>
+        <section>
+          <h2>Google Drive sync</h2>
+          <p>Asympta starts Google's authorization flow only when you choose to connect Google. The app requests only access to the hidden Google Drive App Data folder (<code>drive.appdata</code>); it does not request your name, email address, general Drive files, or contacts. When Lifetime dual backup is enabled, the canvas archive is stored both in that hidden folder and in your private CloudKit database, subject to Google's and Apple's terms and privacy policies.</p>
+          <p>Asympta reads and writes only the archives it creates in that hidden folder. Google user data obtained through the API is not used for advertising, analytics, credit profiling, or resale. Asympta's use and transfer of information received from Google APIs complies with the <a href="https://developers.google.com/terms/api-services-user-data-policy">Google API Services User Data Policy</a>, including the Limited Use requirements.</p>
+          <p>You can sign out of Google within the app and revoke access from the third-party connections settings of your Google Account. To delete cloud copies stored by Asympta in Google Drive, remove Asympta's hidden application data from Google Drive's Manage Apps settings.</p>
+        </section>
 
-      <section>
-        <h2>邀請功能</h2>
-        <p>雲端同步購買者領取折扣邀請時，App 會把所選名額及經 App Store 驗證的假名交易識別碼傳送至 EverFormLab 邀請服務，用以確認購買、限制每位購買者最多兩個邀請，以及防止重複領取。這是購買後的推廣安排，不會鎖起任何創作功能。此流程不要求姓名、電郵或電話，識別碼只會保留至提供及保障邀請所需的期間。</p>
-      </section>
+        <section>
+          <h2>Invitation feature</h2>
+          <p>When a cloud-sync purchaser claims a discount invitation, the app sends the selected invitation slot and a pseudonymous transaction identifier verified by the App Store to the EverFormLab invitation service. This is used to verify the purchase, limit each purchaser to two invitations, and prevent duplicate claims. It is a post-purchase promotional arrangement and does not lock any creative feature. The process does not require a name, email address, or phone number. The identifier is retained only for as long as necessary to provide and protect the invitation program.</p>
+        </section>
 
-      <section>
-        <h2>裝置系統功能</h2>
-        <p>Asympta 使用裝置上的音訊、觸感、時間及本機儲存功能來提供風聲、前景觸感、日光模擬與內容保存。這些本機功能不會把使用資料傳送給開發者。背景風聲是使用者可自行開關的選項；iOS 在 App 進入背景後會暫停 Core Haptics。</p>
-      </section>
+        <section>
+          <h2>Device system features</h2>
+          <p>Asympta uses on-device audio, haptics, time, and local storage to provide wind sound, foreground haptic feedback, daylight simulation, and content persistence. These local features do not send usage data to the developer. Background wind sound is an option you can turn on or off; iOS pauses Core Haptics after the app enters the background.</p>
+        </section>
 
-      <section>
-        <h2>支援電郵</h2>
-        <p>如使用者主動電郵尋求支援，郵件內容、回覆地址及自願附上的資料會由郵件服務處理，並只用於理解和回覆該次支援請求。請勿附上不必要的私人內容。</p>
-      </section>
+        <section>
+          <h2>Support email</h2>
+          <p>If you choose to email support, the message contents, reply address, and any information you voluntarily attach are processed by the email service and used only to understand and respond to that support request. Please do not include unnecessary private content.</p>
+        </section>
 
-      <section>
-        <h2>本支援網站</h2>
-        <p>此網站是靜態頁面，不設自訂分析、追蹤像素、廣告或登入。網站託管服務供應商可能按其政策處理提供網頁所需的標準網絡記錄。</p>
-      </section>
+        <section>
+          <h2>This support website</h2>
+          <p>This website is static and has no custom analytics, tracking pixels, advertising, or login. The hosting provider may process standard network logs required to serve the website according to its own policies.</p>
+        </section>
 
-      <section>
-        <h2>保留、刪除與安全</h2>
-        <ul>
-          <li>本機內容會保留至使用者在 App 內刪除內容或移除 App；是否能從裝置備份恢復由 Apple 的裝置備份設定決定。</li>
-          <li>iCloud 及 Google Drive 封存檔會保留至使用者透過相應服務移除雲端資料。單純在 App 內登出 Google 不會自動刪除任何既有雲端副本。</li>
-          <li>邀請服務會在邀請計劃運作期間保留假名交易識別碼、名額及已分配優惠碼記錄，以維持每次購買最多兩個名額、防止重複發放及處理濫用；優惠碼會加密儲存。</li>
-          <li>支援郵件只會保留至處理問題及合理跟進所需的期間，或法律另有要求的期間。</li>
-          <li>網絡要求使用 HTTPS；Google 權杖儲存在系統鑰匙圈，iCloud 內容使用私人 CloudKit 資料庫。</li>
-        </ul>
-        <p>如要查詢或要求刪除 EverFormLab 控制的邀請或支援資料，請以購買所用裝置及相關資料為依據聯絡下方電郵。為免刪除錯誤資料，我們可能需要先核對對應的假名交易記錄；刪除邀請記錄可能令已發出連結失效或無法再次使用該名額。</p>
-      </section>
+        <section>
+          <h2>Retention, deletion &amp; security</h2>
+          <ul>
+            <li>Local content remains until you delete it in the app or remove the app. Whether it can be restored from a device backup depends on Apple's device-backup settings.</li>
+            <li>iCloud and Google Drive archives remain until you remove the cloud data through the applicable service. Signing out of Google in the app alone does not automatically delete existing cloud copies.</li>
+            <li>While the invitation program operates, the invitation service retains pseudonymous transaction identifiers, slot records, and assigned offer-code records to enforce the two-invitation limit, prevent duplicate issuance, and address abuse. Offer codes are stored encrypted.</li>
+            <li>Support email is retained only for as long as needed to handle the issue and reasonable follow-up, or for a longer period when required by law.</li>
+            <li>Network requests use HTTPS. Google tokens are stored in the system Keychain, and iCloud content uses a private CloudKit database.</li>
+          </ul>
+          <p>To ask about or request deletion of invitation or support data controlled by EverFormLab, contact the email address below with enough purchase/device-related information to identify the relevant record. To avoid deleting the wrong data, we may first need to verify the corresponding pseudonymous transaction record. Deleting invitation records may invalidate already issued links or prevent the same invitation slot from being used again.</p>
+        </section>
 
-      <section>
-        <h2>政策更新</h2>
-        <p>如 Asympta 的資料處理方式改變，本頁會在新做法生效前更新日期與內容。使用者可繼續以免費本機模式使用所有創作功能，而毋須啟用任何雲端服務。</p>
-      </section>
+        <section>
+          <h2>Policy updates</h2>
+          <p>If Asympta's data practices change, this page will be updated with the new date and content before the new practice takes effect. You may continue using all creative features in the free local mode without enabling any cloud service.</p>
+        </section>
 
-      <section>
-        <h2>聯絡</h2>
-        <p>如對本政策有疑問，請聯絡 Ka Ho Lau：<a href="mailto:hello@everformlab.com">hello@everformlab.com</a>。</p>
-      </section>
-    </article>
+        <section>
+          <h2>Contact</h2>
+          <p>For questions about this policy, contact Ka Ho Lau at <a href="mailto:hello@everformlab.com">hello@everformlab.com</a>.</p>
+        </section>
+      </article>
+    </div>
+
+    <div data-lang="zh-Hant" hidden>
+      <header>
+        <p class="eyebrow">私隱</p>
+        <h1>Asympta 私隱政策</h1>
+        <p class="updated">生效及最後更新日期：2026 年 8 月 21 日</p>
+      </header>
+
+      <article>
+        <section>
+          <h2>概要</h2>
+          <p>Asympta 以本機優先及資料最少化為設計原則。所有創作功能均可免費在本機使用，毋須帳戶或網絡；只有使用者主動連接 iCloud／Google、啟用付費雙重備份、領取購買者折扣邀請或電郵支援時，才會使用相應的 Apple、Google 或 EverFormLab 服務。</p>
+          <p>Asympta 不含廣告、第三方分析或跨 App／網站追蹤，亦不出售個人資料。</p>
+        </section>
+
+        <section>
+          <h2>本機資料</h2>
+          <ul>
+            <li>手寫筆跡、文字、世界名稱及使用偏好預設只儲存在使用者的裝置上。</li>
+            <li>除非使用者自行啟用下述付費雙重備份，App 不會把畫布內容傳離裝置。</li>
+            <li>Google Drive 授權權杖及其他敏感憑證只保存於裝置的系統鑰匙圈。</li>
+            <li>刪除 App 可能會移除本機資料；如已啟用同步，雲端副本須按相應服務的方式管理或刪除。</li>
+          </ul>
+        </section>
+
+        <section>
+          <h2>iCloud 與購買</h2>
+          <ul>
+            <li>Asympta 會檢查此裝置能否使用 iCloud；App 不會要求 Apple Account 的姓名或電郵。</li>
+            <li>啟用 Lifetime 雙重備份時，畫布封存檔會存入使用者 Apple Account 對應的私人 CloudKit 資料庫，並由 Apple 處理傳輸及儲存。</li>
+            <li>永久解鎖及優惠兌換由 Apple StoreKit 與 App Store 處理。EverFormLab 不會收到信用卡或完整付款資料。</li>
+          </ul>
+        </section>
+
+        <section>
+          <h2>Google Drive 同步</h2>
+          <p>只有使用者選擇連接 Google 時，Asympta 才會開啟 Google 的授權流程。App 只要求 Google Drive 隱藏 App 資料夾（<code>drive.appdata</code>）權限，不要求姓名、電郵、一般 Drive 檔案或聯絡人。啟用 Lifetime 雙重備份時，畫布封存檔會同時存入該隱藏資料夾及使用者的私人 CloudKit 資料庫，並按 Google 及 Apple 的條款與私隱政策處理。</p>
+          <p>Asympta 只會讀寫自己在該隱藏資料夾建立的封存檔，不會把 Google 使用者資料用於廣告、分析、建立信用資料或轉售。Asympta 對 Google API 所取得資料的使用及轉移遵守 <a href="https://developers.google.com/terms/api-services-user-data-policy">Google API Services User Data Policy</a>，包括 Limited Use 要求。</p>
+          <p>使用者可在 App 內登出 Google，並可在 Google 帳戶的第三方連線設定撤銷權限；如要刪除雲端副本，可在 Google Drive 的「管理應用程式」移除 Asympta 的隱藏應用程式資料。</p>
+        </section>
+
+        <section>
+          <h2>邀請功能</h2>
+          <p>雲端同步購買者領取折扣邀請時，App 會把所選名額及經 App Store 驗證的假名交易識別碼傳送至 EverFormLab 邀請服務，用以確認購買、限制每位購買者最多兩個邀請，以及防止重複領取。這是購買後的推廣安排，不會鎖起任何創作功能。此流程不要求姓名、電郵或電話，識別碼只會保留至提供及保障邀請所需的期間。</p>
+        </section>
+
+        <section>
+          <h2>裝置系統功能</h2>
+          <p>Asympta 使用裝置上的音訊、觸感、時間及本機儲存功能來提供風聲、前景觸感、日光模擬與內容保存。這些本機功能不會把使用資料傳送給開發者。背景風聲是使用者可自行開關的選項；iOS 在 App 進入背景後會暫停 Core Haptics。</p>
+        </section>
+
+        <section>
+          <h2>支援電郵</h2>
+          <p>如使用者主動電郵尋求支援，郵件內容、回覆地址及自願附上的資料會由郵件服務處理，並只用於理解和回覆該次支援請求。請勿附上不必要的私人內容。</p>
+        </section>
+
+        <section>
+          <h2>本支援網站</h2>
+          <p>此網站是靜態頁面，不設自訂分析、追蹤像素、廣告或登入。網站託管服務供應商可能按其政策處理提供網頁所需的標準網絡記錄。</p>
+        </section>
+
+        <section>
+          <h2>保留、刪除與安全</h2>
+          <ul>
+            <li>本機內容會保留至使用者在 App 內刪除內容或移除 App；是否能從裝置備份恢復由 Apple 的裝置備份設定決定。</li>
+            <li>iCloud 及 Google Drive 封存檔會保留至使用者透過相應服務移除雲端資料。單純在 App 內登出 Google 不會自動刪除任何既有雲端副本。</li>
+            <li>邀請服務會在邀請計劃運作期間保留假名交易識別碼、名額及已分配優惠碼記錄，以維持每次購買最多兩個名額、防止重複發放及處理濫用；優惠碼會加密儲存。</li>
+            <li>支援郵件只會保留至處理問題及合理跟進所需的期間，或法律另有要求的期間。</li>
+            <li>網絡要求使用 HTTPS；Google 權杖儲存在系統鑰匙圈，iCloud 內容使用私人 CloudKit 資料庫。</li>
+          </ul>
+          <p>如要查詢或要求刪除 EverFormLab 控制的邀請或支援資料，請以購買所用裝置及相關資料為依據聯絡下方電郵。為免刪除錯誤資料，我們可能需要先核對對應的假名交易記錄；刪除邀請記錄可能令已發出連結失效或無法再次使用該名額。</p>
+        </section>
+
+        <section>
+          <h2>政策更新</h2>
+          <p>如 Asympta 的資料處理方式改變，本頁會在新做法生效前更新日期與內容。使用者可繼續以免費本機模式使用所有創作功能，而毋須啟用任何雲端服務。</p>
+        </section>
+
+        <section>
+          <h2>聯絡</h2>
+          <p>如對本政策有疑問，請聯絡 Ka Ho Lau：<a href="mailto:hello@everformlab.com">hello@everformlab.com</a>。</p>
+        </section>
+      </article>
+    </div>
 
     <footer>© 2026 Ka Ho Lau · Asympta</footer>
   </main>
+
+  <script>
+    (() => {
+      const storageKey = 'asympta-language';
+      const descriptions = {
+        en: 'Asympta Privacy Policy: local-first by default, optional iCloud + Google Drive dual backup, and no ads or tracking.',
+        'zh-Hant': 'Asympta 私隱政策：本機優先、可選 iCloud + Google Drive 雙重備份，並且不含廣告或追蹤。'
+      };
+      const titles = {
+        en: 'Asympta Privacy Policy',
+        'zh-Hant': 'Asympta 私隱政策'
+      };
+
+      function setLanguage(language) {
+        const lang = language === 'zh-Hant' ? 'zh-Hant' : 'en';
+        document.documentElement.lang = lang;
+        document.title = titles[lang];
+        document.querySelector('meta[name="description"]').setAttribute('content', descriptions[lang]);
+
+        document.querySelectorAll('[data-lang]').forEach((node) => {
+          node.hidden = node.dataset.lang !== lang;
+        });
+        document.querySelectorAll('[data-lang-label]').forEach((node) => {
+          node.hidden = node.dataset.langLabel !== lang;
+        });
+        document.querySelectorAll('[data-set-lang]').forEach((button) => {
+          button.setAttribute('aria-pressed', button.dataset.setLang === lang ? 'true' : 'false');
+        });
+
+        try { localStorage.setItem(storageKey, lang); } catch (_) {}
+      }
+
+      document.querySelectorAll('[data-set-lang]').forEach((button) => {
+        button.addEventListener('click', () => setLanguage(button.dataset.setLang));
+      });
+
+      let initialLanguage = 'en';
+      try {
+        if (localStorage.getItem(storageKey) === 'zh-Hant') initialLanguage = 'zh-Hant';
+      } catch (_) {}
+      setLanguage(initialLanguage);
+    })();
+  </script>
 </body>
 </html>

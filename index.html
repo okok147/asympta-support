@@ -1,11 +1,11 @@
 <!doctype html>
-<html lang="zh-Hant">
+<html lang="en">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="description" content="Asympta 支援資訊、常見問題與聯絡方式。">
+  <meta name="description" content="Asympta support, frequently asked questions, privacy information, and contact details.">
   <meta name="theme-color" content="#f3f0e7">
-  <title>Asympta 支援</title>
+  <title>Asympta Support</title>
   <style>
     :root {
       color-scheme: light;
@@ -95,8 +95,41 @@
     .mark::before { width: 15px; height: 25px; left: 4px; top: -1px; }
     .mark::after { width: 28px; height: 12px; left: 9px; top: 10px; transform: rotate(-12deg); }
 
+    .nav-actions {
+      display: flex;
+      align-items: center;
+      gap: 18px;
+    }
+
     .nav-links { display: flex; gap: 20px; font-size: .9rem; }
     .nav-links a { color: var(--muted); text-decoration: none; }
+
+    .language-switch {
+      display: inline-flex;
+      align-items: center;
+      gap: 3px;
+      padding: 3px;
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      background: rgba(255,255,255,.34);
+    }
+
+    .lang-button {
+      border: 0;
+      border-radius: 999px;
+      padding: 6px 10px;
+      color: var(--muted);
+      background: transparent;
+      font: inherit;
+      font-size: .78rem;
+      cursor: pointer;
+    }
+
+    .lang-button[aria-pressed="true"] {
+      color: var(--ink);
+      background: rgba(255,255,255,.82);
+      box-shadow: 0 1px 7px rgba(38,48,63,.08);
+    }
 
     .hero {
       padding: clamp(52px, 9vw, 94px) 0 clamp(48px, 8vw, 76px);
@@ -118,7 +151,7 @@
     h2 { font-size: clamp(1.55rem, 3.5vw, 2.2rem); }
 
     .lead {
-      max-width: 660px;
+      max-width: 690px;
       margin: 24px 0 0;
       color: var(--muted);
       font-size: clamp(1.04rem, 2vw, 1.22rem);
@@ -178,9 +211,12 @@
     }
 
     footer p { margin: 0; }
+    [hidden] { display: none !important; }
 
     @media (max-width: 720px) {
       .shell { width: min(100% - 28px, 980px); padding-top: 20px; }
+      .nav { align-items: flex-start; }
+      .nav-actions { flex-direction: column-reverse; align-items: flex-end; gap: 10px; }
       .nav-links { gap: 12px; }
       .grid { grid-template-columns: 1fr; }
       .card { min-height: 0; }
@@ -195,57 +231,150 @@
 </head>
 <body>
   <main class="shell">
-    <nav class="nav" aria-label="主要導覽">
-      <a class="brand" href="./" aria-label="Asympta 支援首頁"><span class="mark" aria-hidden="true"></span>ASYMPTA</a>
-      <div class="nav-links">
-        <a href="#support">支援</a>
-        <a href="privacy/">私隱</a>
+    <nav class="nav" id="main-nav" aria-label="Main navigation">
+      <a class="brand" href="./" id="brand-link" aria-label="Asympta support home"><span class="mark" aria-hidden="true"></span>ASYMPTA</a>
+      <div class="nav-actions">
+        <div class="nav-links">
+          <a href="#support"><span data-lang-label="en">Support</span><span data-lang-label="zh-Hant" hidden>支援</span></a>
+          <a href="privacy/"><span data-lang-label="en">Privacy</span><span data-lang-label="zh-Hant" hidden>私隱</span></a>
+        </div>
+        <div class="language-switch" role="group" aria-label="Language">
+          <button class="lang-button" type="button" data-set-lang="en" aria-pressed="true">EN</button>
+          <button class="lang-button" type="button" data-set-lang="zh-Hant" aria-pressed="false">繁中</button>
+        </div>
       </div>
     </nav>
 
-    <header class="hero">
-      <p class="eyebrow">Support · 支援</p>
+    <header class="hero" data-lang="en">
+      <p class="eyebrow">Support</p>
+      <h1>Write quietly.<br>Let ideas rise and settle.</h1>
+      <p class="lead">Asympta is a local-first handwriting canvas. All creative tools are free. A one-time Lifetime purchase permanently unlocks dual iCloud + Google Drive backup and includes two one-time App Store discount invitations.</p>
+    </header>
+
+    <header class="hero" data-lang="zh-Hant" hidden>
+      <p class="eyebrow">支援</p>
       <h1>安靜地寫，<br>讓想法自然浮沉。</h1>
       <p class="lead">Asympta 是一張以本機儲存為先的手寫畫布。所有創作功能免費；Lifetime 一次購買會永久解鎖 iCloud + Google Drive 雙重備份，並提供兩個一次性 App Store 折扣邀請。</p>
     </header>
 
-    <section class="grid" id="support" aria-label="常見問題">
-      <article class="card">
-        <span class="number">01</span>
-        <h2>書寫與縮放</h2>
-        <p>可使用 Apple Pencil 或手指書寫。筆畫的粗幼與平滑度會按目前縮放比例調整；如要修改內容，可使用一小時橡皮擦或移動工具。</p>
-      </article>
+    <section id="support" aria-label="Frequently asked questions">
+      <div class="grid" data-lang="en">
+        <article class="card">
+          <span class="number">01</span>
+          <h2>Writing &amp; zoom</h2>
+          <p>Write with Apple Pencil or your finger. Stroke thickness and smoothing adjust to the current zoom level. To modify content, use the 1-hour eraser or the Move tool.</p>
+        </article>
 
-      <article class="card">
-        <span class="number">02</span>
-        <h2>風聲與觸感</h2>
-        <p>在風聲選單調整音量，並可選擇讓風聲在背景繼續播放。觸感只會在支援 Core Haptics 的 iPhone 前景中回應；iPad 及背景狀態不會提供觸感。</p>
-      </article>
+        <article class="card">
+          <span class="number">02</span>
+          <h2>Wind sound &amp; haptics</h2>
+          <p>Adjust wind volume from the Wind menu and choose whether it continues playing in the background. Haptics respond only while the app is in the foreground on iPhones that support Core Haptics; iPad and background states do not provide haptic feedback.</p>
+        </article>
 
-      <article class="card">
-        <span class="number">03</span>
-        <h2>文字與聚焦</h2>
-        <p>選擇文字工具後點擊紙面，以 −／＋ 調整預設字體大小。雙擊已淡入的內容可移到中央並提高清晰度；再次雙擊或開始其他操作便會返回原位。</p>
-      </article>
+        <article class="card">
+          <span class="number">03</span>
+          <h2>Text &amp; focus</h2>
+          <p>Select the Text tool and tap the canvas, then use − / + to adjust the default text size. Double-tap faded content to bring it to the center and increase clarity; double-tap again or begin another action to return it to its original position.</p>
+        </article>
 
-      <article class="card">
-        <span class="number">04</span>
-        <h2>雙重備份永久解鎖</h2>
-        <p>筆跡、文字、世界、風聲、觸感、光照及其他創作功能全部免費，未購買時只作本機保存。在香港，Lifetime 一次性價格為 HK$188，會永久解鎖 iCloud + Google Drive 雙重備份：每次先讀取兩邊及合併最新內容，再把同一份封存檔寫回兩個服務。購買者另可分享兩個一次性 App Store 折扣邀請，介面標示 10% 及 20% 折扣；兌換時由 App Store 顯示適用地區的實際當地價格及資格。刪除 App 前請先確認兩邊都顯示已備份。</p>
-      </article>
+        <article class="card">
+          <span class="number">04</span>
+          <h2>Lifetime dual backup</h2>
+          <p>Handwriting, text, worlds, wind sound, haptics, lighting, and all other creative tools are free and remain local when Lifetime is not purchased. In Hong Kong, Lifetime is a one-time HK$188 purchase that permanently unlocks iCloud + Google Drive dual backup. Each backup reads both services, merges the latest content, then writes the same archive back to both. Purchasers can also share two one-time App Store discount invitations, shown in the app as 10% and 20%; the App Store displays the actual local price and eligibility when redeemed. Before deleting the app, confirm that both services show a completed backup.</p>
+        </article>
+      </div>
+
+      <div class="grid" data-lang="zh-Hant" hidden>
+        <article class="card">
+          <span class="number">01</span>
+          <h2>書寫與縮放</h2>
+          <p>可使用 Apple Pencil 或手指書寫。筆畫的粗幼與平滑度會按目前縮放比例調整；如要修改內容，可使用一小時橡皮擦或移動工具。</p>
+        </article>
+
+        <article class="card">
+          <span class="number">02</span>
+          <h2>風聲與觸感</h2>
+          <p>在風聲選單調整音量，並可選擇讓風聲在背景繼續播放。觸感只會在支援 Core Haptics 的 iPhone 前景中回應；iPad 及背景狀態不會提供觸感。</p>
+        </article>
+
+        <article class="card">
+          <span class="number">03</span>
+          <h2>文字與聚焦</h2>
+          <p>選擇文字工具後點擊紙面，以 −／＋ 調整預設字體大小。雙擊已淡入的內容可移到中央並提高清晰度；再次雙擊或開始其他操作便會返回原位。</p>
+        </article>
+
+        <article class="card">
+          <span class="number">04</span>
+          <h2>雙重備份永久解鎖</h2>
+          <p>筆跡、文字、世界、風聲、觸感、光照及其他創作功能全部免費，未購買時只作本機保存。在香港，Lifetime 一次性價格為 HK$188，會永久解鎖 iCloud + Google Drive 雙重備份：每次先讀取兩邊及合併最新內容，再把同一份封存檔寫回兩個服務。購買者另可分享兩個一次性 App Store 折扣邀請，介面標示 10% 及 20% 折扣；兌換時由 App Store 顯示適用地區的實際當地價格及資格。刪除 App 前請先確認兩邊都顯示已備份。</p>
+        </article>
+      </div>
     </section>
 
-    <section class="contact" aria-labelledby="contact-title">
+    <section class="contact" data-lang="en" aria-labelledby="contact-title-en">
       <p class="eyebrow">EverFormLab</p>
-      <h2 id="contact-title">需要協助？</h2>
+      <h2 id="contact-title-en">Need help?</h2>
+      <p>Email <a href="mailto:hello@everformlab.com">hello@everformlab.com</a> with your device model, system version, steps to reproduce the issue, and—when useful—a screenshot that does not contain private content.</p>
+      <p><a href="privacy/">Read the Asympta Privacy Policy</a></p>
+    </section>
+
+    <section class="contact" data-lang="zh-Hant" aria-labelledby="contact-title-zh" hidden>
+      <p class="eyebrow">EverFormLab</p>
+      <h2 id="contact-title-zh">需要協助？</h2>
       <p>請電郵至 <a href="mailto:hello@everformlab.com">hello@everformlab.com</a>，並附上裝置型號、系統版本、問題重現步驟，以及不含私人內容的畫面截圖（如適用）。</p>
       <p><a href="privacy/">閱讀 Asympta 私隱政策</a></p>
     </section>
 
     <footer>
       <p>© 2026 Ka Ho Lau. All rights reserved.</p>
-      <p>Asympta · Local-first writing canvas</p>
+      <p><span data-lang-label="en">Asympta · Local-first writing canvas</span><span data-lang-label="zh-Hant" hidden>Asympta · 本機優先手寫畫布</span></p>
     </footer>
   </main>
+
+  <script>
+    (() => {
+      const storageKey = 'asympta-language';
+      const descriptions = {
+        en: 'Asympta support, frequently asked questions, privacy information, and contact details.',
+        'zh-Hant': 'Asympta 支援資訊、常見問題、私隱資訊與聯絡方式。'
+      };
+      const titles = {
+        en: 'Asympta Support',
+        'zh-Hant': 'Asympta 支援'
+      };
+
+      function setLanguage(language) {
+        const lang = language === 'zh-Hant' ? 'zh-Hant' : 'en';
+        document.documentElement.lang = lang;
+        document.title = titles[lang];
+        document.querySelector('meta[name="description"]').setAttribute('content', descriptions[lang]);
+        document.getElementById('main-nav').setAttribute('aria-label', lang === 'en' ? 'Main navigation' : '主要導覽');
+        document.getElementById('brand-link').setAttribute('aria-label', lang === 'en' ? 'Asympta support home' : 'Asympta 支援首頁');
+        document.getElementById('support').setAttribute('aria-label', lang === 'en' ? 'Frequently asked questions' : '常見問題');
+
+        document.querySelectorAll('[data-lang]').forEach((node) => {
+          node.hidden = node.dataset.lang !== lang;
+        });
+        document.querySelectorAll('[data-lang-label]').forEach((node) => {
+          node.hidden = node.dataset.langLabel !== lang;
+        });
+        document.querySelectorAll('[data-set-lang]').forEach((button) => {
+          button.setAttribute('aria-pressed', button.dataset.setLang === lang ? 'true' : 'false');
+        });
+
+        try { localStorage.setItem(storageKey, lang); } catch (_) {}
+      }
+
+      document.querySelectorAll('[data-set-lang]').forEach((button) => {
+        button.addEventListener('click', () => setLanguage(button.dataset.setLang));
+      });
+
+      let initialLanguage = 'en';
+      try {
+        if (localStorage.getItem(storageKey) === 'zh-Hant') initialLanguage = 'zh-Hant';
+      } catch (_) {}
+      setLanguage(initialLanguage);
+    })();
+  </script>
 </body>
 </html>
