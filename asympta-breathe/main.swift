@@ -83,7 +83,8 @@ private final class FadeSession {
     let panels: [BreathPanel]
     let views: [BreathOverlayView]
     var displacements: [AppDisplacement] = []
-    var isInhaling = false
+    var inhalingPIDs: Set<pid_t> = []
+    var restoredPIDs: Set<pid_t> = []
 
     init(
         captured: [CapturedWindow],
@@ -93,6 +94,14 @@ private final class FadeSession {
         self.captured = captured
         self.panels = panels
         self.views = views
+    }
+
+    var allPIDs: Set<pid_t> {
+        Set(captured.map { $0.target.app.processIdentifier })
+    }
+
+    var remainingPIDs: Set<pid_t> {
+        allPIDs.subtracting(restoredPIDs)
     }
 }
 
@@ -250,9 +259,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         } else if !accessibilityPermission {
             statusText = "Accessibility permission needed"
         } else if let session {
-            statusText = session.isInhaling
-                ? "Breathing in"
-                : "Resting at 10% · click a faded app to return"
+            let remaining = session.remainingPIDs.count
+            statusText = remaining == 1
+                ? "1 app resting at 10% · click it to return"
+                : "\(remaining) apps resting at 10% · click one to return"
         } else {
             let count = collectVisibleWindows().count
             statusText = enabled
@@ -295,7 +305,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         if session != nil {
             let restore = NSMenuItem(
-                title: "Breathe In Now",
+                title: "Breathe In All Now",
                 action: #selector(breatheInNow),
                 keyEquivalent: ""
             )
@@ -492,7 +502,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     @objc private func breatheInNow() {
-        breatheIn(preferredApp: nil)
+        breatheInAll()
     }
 
     @objc private func setIdleDelay(_ sender: NSMenuItem) {
@@ -683,7 +693,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                         return
                     }
 
-                    self.breatheIn(preferredApp: app)
+                    self.breatheIn(
+                        pid: app?.processIdentifier,
+                        preferredApp: app
+                    )
                 }
             }
         }
@@ -754,12 +767,25 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func breatheIn(
+        pid: pid_t?,
         preferredApp: NSRunningApplication?
     ) {
-        guard let current = session else { return }
-        guard !current.isInhaling else { return }
+        guard
+            let pid,
+            let current = session,
+            current.remainingPIDs.contains(pid),
+            !current.inhalingPIDs.contains(pid)
+        else {
+            return
+        }
 
-        current.isInhaling = true
+        let indices = current.captured.indices.filter {
+            current.captured[$0].target.app.processIdentifier == pid
+        }
+
+        guard !indices.isEmpty else { return }
+
+        current.inhalingPIDs.insert(pid)
         rebuildMenu()
 
         NSAnimationContext.runAnimationGroup { context in
@@ -773,8 +799,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 )
             context.allowsImplicitAnimation = true
 
-            for view in current.views {
-                view.imageView.animator().alphaValue = 1
+            for index in indices {
+                current.views[index].imageView.animator().alphaValue = 1
             }
         } completionHandler: { [weak self, weak current, weak preferredApp] in
             Task { @MainActor in
@@ -786,7 +812,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     return
                 }
 
-                self.restoreOriginalWindows(current.displacements)
+                if let displacement =
+                    current.displacements.first(
+                        where: {
+                            $0.app.processIdentifier == pid
+                        }
+                    ) {
+                    self.restoreOriginalWindows([displacement])
+                }
 
                 if let preferredApp {
                     _ = preferredApp.activate(options: [])
@@ -803,15 +836,40 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                         return
                     }
 
-                    current.panels.forEach {
-                        $0.orderOut(nil)
-                        $0.close()
+                    for index in indices {
+                        current.panels[index].orderOut(nil)
+                        current.panels[index].close()
                     }
 
-                    self.session = nil
+                    current.inhalingPIDs.remove(pid)
+                    current.restoredPIDs.insert(pid)
+
+                    if current.remainingPIDs.isEmpty {
+                        self.session = nil
+                    }
+
                     self.rebuildMenu()
                 }
             }
+        }
+    }
+
+    private func breatheInAll() {
+        guard let current = session else { return }
+
+        let pids = Array(current.remainingPIDs)
+
+        for pid in pids {
+            let app = current.captured.first(
+                where: {
+                    $0.target.app.processIdentifier == pid
+                }
+            )?.target.app
+
+            breatheIn(
+                pid: pid,
+                preferredApp: app
+            )
         }
     }
 
