@@ -7,8 +7,7 @@ import CoreImage
 
 private let appBundleID = "com.asympta.breathe"
 private let permissionResetPendingKey = "permissionResetPending"
-private let permissionFlowGenerationKey = "permissionFlowGeneration"
-private let permissionFlowGeneration = 4
+private let lastPermissionResetVersionKey = "lastPermissionResetVersion"
 
 private let ciContext = CIContext(
     options: [
@@ -1255,20 +1254,32 @@ final class AppDelegate:
         let defaults =
             UserDefaults.standard
 
-        let savedGeneration =
-            defaults.integer(
+        let currentVersion =
+            Bundle.main
+                .object(
+                    forInfoDictionaryKey:
+                        "CFBundleShortVersionString"
+                ) as? String
+            ?? "unknown"
+
+        let lastResetVersion =
+            defaults.string(
                 forKey:
-                    permissionFlowGenerationKey
+                    lastPermissionResetVersionKey
             )
 
-        if savedGeneration
-            != permissionFlowGeneration {
-            // First launch of this onboarding generation:
-            // clear any stale approvals exactly once, before requesting either.
+        if lastResetVersion
+            != currentVersion {
+            // First launch of THIS app version:
+            // clear both old TCC approvals exactly once.
+            //
+            // The version is recorded before opening System Settings so that
+            // a macOS-requested reopen of the same build does not erase the
+            // permission the user just granted.
             defaults.set(
-                permissionFlowGeneration,
+                currentVersion,
                 forKey:
-                    permissionFlowGenerationKey
+                    lastPermissionResetVersionKey
             )
 
             defaults.set(
@@ -1280,6 +1291,12 @@ final class AppDelegate:
             _ =
                 resetAsymptaPermissions()
 
+            screenPermission =
+                false
+
+            accessibilityPermission =
+                false
+
             showPermissionGate(
                 step:
                     .screenRecording
@@ -1288,6 +1305,8 @@ final class AppDelegate:
             return
         }
 
+        // Same version being reopened: never reset again.
+        // Preserve whatever the user approved and continue the sequence.
         await evaluatePermissionFlow()
     }
 
