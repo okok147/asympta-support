@@ -710,10 +710,6 @@ private final class PermissionGateController:
         )
     }
 
-    deinit {
-        removeActivationObserver()
-    }
-
     func stop() {
         removeActivationObserver()
         close()
@@ -984,14 +980,12 @@ private final class PermissionGateController:
                     [weak self]
                     _ in
 
-                    guard
-                        let self
-                    else {
-                        return
-                    }
+                    Task {
+                        @MainActor in
 
-                    self
-                        .onPermissionStateMayHaveChanged?()
+                        self?
+                            .onPermissionStateMayHaveChanged?()
+                    }
                 }
     }
 
