@@ -3309,6 +3309,109 @@ final class AppDelegate:
         rebuildMenu()
     }
 
+    private func topmostRealAppPID(
+        at appKitPoint:
+            CGPoint
+    ) -> pid_t? {
+        let mainHeight =
+            CGDisplayBounds(
+                CGMainDisplayID()
+            )
+            .height
+
+        let cgPoint =
+            CGPoint(
+                x:
+                    appKitPoint.x,
+                y:
+                    mainHeight
+                    - appKitPoint.y
+            )
+
+        let options:
+            CGWindowListOption = [
+                .optionOnScreenOnly,
+                .excludeDesktopElements
+            ]
+
+        guard
+            let list =
+                CGWindowListCopyWindowInfo(
+                    options,
+                    kCGNullWindowID
+                )
+            as? [[String: Any]]
+        else {
+            return nil
+        }
+
+        let ownPID =
+            ProcessInfo
+                .processInfo
+                .processIdentifier
+
+        for info
+            in list {
+            guard
+                let pid =
+                    (
+                        info[
+                            kCGWindowOwnerPID
+                                as String
+                        ]
+                        as? NSNumber
+                    )?
+                    .int32Value,
+                pid
+                    != ownPID,
+                let layer =
+                    (
+                        info[
+                            kCGWindowLayer
+                                as String
+                        ]
+                        as? NSNumber
+                    )?
+                    .intValue,
+                layer
+                    == 0,
+                let alpha =
+                    (
+                        info[
+                            kCGWindowAlpha
+                                as String
+                        ]
+                        as? NSNumber
+                    )?
+                    .doubleValue,
+                alpha
+                    > 0.02,
+                let bounds =
+                    info[
+                        kCGWindowBounds
+                            as String
+                    ]
+                    as? NSDictionary,
+                let frame =
+                    CGRect(
+                        dictionaryRepresentation:
+                            bounds
+                                as CFDictionary
+                    ),
+                frame
+                    .contains(
+                        cgPoint
+                    )
+            else {
+                continue
+            }
+
+            return pid
+        }
+
+        return nil
+    }
+
     private func installClickMonitor(
         session:
             FadeSession
@@ -3344,27 +3447,17 @@ final class AppDelegate:
                                 .mouseLocation
 
                         guard
-                            let overlay =
-                                session
-                                    .overlays
-                                    .first(
-                                        where: {
-                                            session
-                                                .remainingPIDs
-                                                .contains(
-                                                    $0
-                                                        .target
-                                                        .app
-                                                        .processIdentifier
-                                                )
-                                            && $0
-                                                .panel
-                                                .frame
-                                                .contains(
-                                                    point
-                                                )
-                                        }
-                                    )
+                            let pid =
+                                self
+                                    .topmostRealAppPID(
+                                        at:
+                                            point
+                                    ),
+                            session
+                                .remainingPIDs
+                                .contains(
+                                    pid
+                                )
                         else {
                             return
                         }
@@ -3372,10 +3465,7 @@ final class AppDelegate:
                         self
                             .breatheIn(
                                 pid:
-                                    overlay
-                                        .target
-                                        .app
-                                        .processIdentifier
+                                    pid
                             )
                     }
                 }
@@ -3432,25 +3522,41 @@ final class AppDelegate:
             NSEvent
                 .mouseLocation
 
+        let topPID =
+            topmostRealAppPID(
+                at:
+                    point
+            )
+
         let hovered =
             session
                 .overlays
                 .first(
                     where: {
-                        session
-                            .remainingPIDs
-                            .contains(
-                                $0
-                                    .target
-                                    .app
-                                    .processIdentifier
-                            )
-                        && $0
-                            .panel
-                            .frame
-                            .contains(
-                                point
-                            )
+                        guard
+                            let topPID,
+                            session
+                                .remainingPIDs
+                                .contains(
+                                    topPID
+                                )
+                        else {
+                            return false
+                        }
+
+                        return
+                            $0
+                                .target
+                                .app
+                                .processIdentifier
+                            == topPID
+
+                            && $0
+                                .panel
+                                .frame
+                                .contains(
+                                    point
+                                )
                     }
                 )
 
@@ -3996,7 +4102,12 @@ final class AppDelegate:
 
         guard
             !overlays
-                .isEmpty
+                .isEmpty,
+            let targetApp =
+                overlays
+                    .first?
+                    .target
+                    .app
         else {
             return
         }
@@ -4006,21 +4117,6 @@ final class AppDelegate:
             .insert(
                 pid
             )
-
-        if let targetApp =
-            overlays
-                .first?
-                .target
-                .app {
-            // Selection invariant:
-            // clicking a resting app must make that exact app the foreground app,
-            // not merely remove its Breathe overlay.
-            _ =
-                targetApp
-                    .activate(
-                        options: []
-                    )
-        }
 
         if let hoveredID =
             current
@@ -4039,6 +4135,67 @@ final class AppDelegate:
                 .hoveredWindowID =
                     nil
         }
+
+        // Keep all still-resting overlays above their own apps, but below
+        // the app the user just selected.
+        for remainingOverlay
+            in current
+                .overlays {
+            let remainingPID =
+                remainingOverlay
+                    .target
+                    .app
+                    .processIdentifier
+
+            guard
+                remainingPID
+                    != pid,
+                current
+                    .remainingPIDs
+                    .contains(
+                        remainingPID
+                    )
+            else {
+                continue
+            }
+
+            remainingOverlay
+                .panel
+                .level =
+                    .normal
+
+            remainingOverlay
+                .panel
+                .orderFrontRegardless()
+        }
+
+        // The selected overlay itself goes to the very front for the inhale
+        // transition. Its real app is activated underneath it at the same time.
+        for overlay
+            in overlays {
+            overlay
+                .panel
+                .level =
+                    .screenSaver
+
+            overlay
+                .panel
+                .orderFrontRegardless()
+
+            // Selection no longer needs the resting outline.
+            // Remove the border immediately; only the dimming cover breathes away.
+            overlay
+                .view
+                .borderImageView
+                .alphaValue =
+                    0
+        }
+
+        _ =
+            targetApp
+                .activate(
+                    options: []
+                )
 
         NSAnimationContext
             .runAnimationGroup {
@@ -4073,13 +4230,6 @@ final class AppDelegate:
                     overlay
                         .view
                         .textImageView
-                        .animator()
-                        .alphaValue =
-                            0
-
-                    overlay
-                        .view
-                        .borderImageView
                         .animator()
                         .alphaValue =
                             0
@@ -4127,19 +4277,13 @@ final class AppDelegate:
                             pid
                         )
 
-                    if let targetApp =
-                        overlays
-                            .first?
-                            .target
-                            .app {
-                        // Reassert activation after the high-level overlay panels
-                        // have been removed so the selected app remains in front.
-                        _ =
-                            targetApp
-                                .activate(
-                                    options: []
-                                )
-                    }
+                    // Reassert foreground ownership only after the selected
+                    // overlay is gone. The user now sees the live app itself.
+                    _ =
+                        targetApp
+                            .activate(
+                                options: []
+                            )
 
                     if current
                         .remainingPIDs
