@@ -6,6 +6,7 @@ import ApplicationServices
 import CoreImage
 
 private let appBundleID = "com.asympta.breathe"
+private let permissionResetPendingKey = "permissionResetPending"
 
 private let ciContext = CIContext(
     options: [
@@ -660,7 +661,7 @@ private final class PermissionGateController:
     private let refreshButton =
         NSButton(
             title:
-                "Refresh Permissions",
+                "Check Permissions",
             target:
                 nil,
             action:
@@ -722,7 +723,6 @@ private final class PermissionGateController:
         )
 
         configureUI()
-        startMonitoring()
     }
 
     required init?(
@@ -775,8 +775,9 @@ private final class PermissionGateController:
         let subtitle =
             NSTextField(
                 wrappingLabelWithString:
-                    "Asympta Breathe verifies Screen Recording and Accessibility before starting. "
-                    + "The page refreshes automatically, or you can verify immediately."
+                    "Asympta Breathe requires Screen Recording and Accessibility. "
+                    + "There is no automatic refresh: approve both, then click Check Permissions, "
+                    + "or reopen the app if macOS asks you to."
             )
 
         subtitle
@@ -1003,12 +1004,7 @@ private final class PermissionGateController:
                     )
             ])
 
-        Task {
-            [weak self] in
-
-            await self?
-                .refresh()
-        }
+        loadCurrentStatus()
     }
 
     private func permissionRow(
@@ -1169,28 +1165,91 @@ private final class PermissionGateController:
         return box
     }
 
-    private func startMonitoring() {
-        pollTimer?
-            .invalidate()
+    private func loadCurrentStatus() {
+        let screenAllowed =
+            CGPreflightScreenCaptureAccess()
 
-        pollTimer =
-            Timer
-                .scheduledTimer(
-                    withTimeInterval:
-                        0.50,
-                    repeats:
-                        true
-                ) {
-                    [weak self]
-                    _ in
+        let accessibilityAllowed =
+            AXIsProcessTrusted()
 
-                    Task {
-                        @MainActor in
+        screenVerified =
+            screenAllowed
 
-                        await self?
-                            .refresh()
-                    }
+        accessibilityVerified =
+            accessibilityAllowed
+
+        updatePermission(
+            allowed:
+                screenVerified,
+            icon:
+                screenIcon,
+            status:
+                screenStatus,
+            button:
+                screenButton
+        )
+
+        updatePermission(
+            allowed:
+                accessibilityVerified,
+            icon:
+                accessibilityIcon,
+            status:
+                accessibilityStatus,
+            button:
+                accessibilityButton
+        )
+
+        footerStatus
+            .stringValue =
+                "Approve both permissions, then click Check Permissions. "
+                + "If macOS asks you to reopen the app, reopen it."
+    }
+
+    func beginApprovalRequests() {
+        footerStatus
+            .stringValue =
+                "Previous approvals were cleared. Requesting fresh permissions…"
+
+        DispatchQueue
+            .main
+            .asyncAfter(
+                deadline:
+                    .now()
+                    + 0.25
+            ) {
+                [weak self] in
+
+                guard
+                    let self
+                else {
+                    return
                 }
+
+                if !CGPreflightScreenCaptureAccess() {
+                    _ =
+                        CGRequestScreenCaptureAccess()
+                }
+
+                if !AXIsProcessTrusted() {
+                    let key =
+                        kAXTrustedCheckOptionPrompt
+                            .takeUnretainedValue()
+                        as String
+
+                    let options =
+                        [key: true]
+                        as CFDictionary
+
+                    _ =
+                        AXIsProcessTrustedWithOptions(
+                            options
+                        )
+                }
+
+                self
+                    .loadCurrentStatus()
+            }
     }
 
     private func refresh()
@@ -1320,7 +1379,7 @@ private final class PermissionGateController:
         } else {
             footerStatus
                 .stringValue =
-                    "Both permissions must be verified before Asympta Breathe can start."
+                    "Not fully verified yet. Approve the missing permission, then click Check Permissions."
 
             footerStatus
                 .textColor =
@@ -1459,7 +1518,6 @@ private final class PermissionGateController:
                 .textColor =
                     .systemRed
 
-            startMonitoring()
             return
         }
 
@@ -1475,7 +1533,6 @@ private final class PermissionGateController:
             .stringValue =
                 "Reset complete. Approve both permissions again."
 
-        startMonitoring()
 
         DispatchQueue
             .main
@@ -1532,23 +1589,9 @@ private final class PermissionGateController:
             }
         }
 
-        DispatchQueue
-            .main
-            .asyncAfter(
-                deadline:
-                    .now()
-                    + 0.35
-            ) {
-                [weak self]
-                in
-
-                Task {
-                    @MainActor in
-
-                    await self?
-                        .refresh()
-                }
-            }
+        screenStatus
+            .stringValue =
+                "Requested — click Check Permissions or reopen the app"
     }
 
     @objc
@@ -1567,36 +1610,9 @@ private final class PermissionGateController:
                 options
             )
 
-        DispatchQueue
-            .main
-            .asyncAfter(
-                deadline:
-                    .now()
-                    + 0.45
-            ) {
-                [weak self]
-                in
-
-                guard
-                    let self
-                else {
-                    return
-                }
-
-                if !AXIsProcessTrusted() {
-                    self
-                        .openPrivacyPane(
-                            "Privacy_Accessibility"
-                        )
-                }
-
-                Task {
-                    @MainActor in
-
-                    await self
-                        .refresh()
-                }
-            }
+        accessibilityStatus
+            .stringValue =
+                "Requested — click Check Permissions or reopen the app"
     }
 
     private func openPrivacyPane(
@@ -1770,13 +1786,82 @@ final class AppDelegate:
         _ notification:
             Notification
     ) {
-        screenPermission =
-            false
+        NSApp
+            .setActivationPolicy(
+                .regular
+            )
 
-        accessibilityPermission =
-            false
+        Task {
+            @MainActor in
 
-        showPermissionGate()
+            let accessibility =
+                AXIsProcessTrusted()
+
+            let screenPreflight =
+                CGPreflightScreenCaptureAccess()
+
+            let screenVerified:
+                Bool
+
+            if screenPreflight {
+                screenVerified =
+                    await verifyScreenCaptureCapability()
+            } else {
+                screenVerified =
+                    false
+            }
+
+            if screenVerified
+                && accessibility {
+                UserDefaults
+                    .standard
+                    .removeObject(
+                        forKey:
+                            permissionResetPendingKey
+                    )
+
+                enterMainMode(
+                    screenVerified:
+                        true,
+                    accessibilityVerified:
+                        true
+                )
+
+                return
+            }
+
+            let resetAlreadyPerformed =
+                UserDefaults
+                    .standard
+                    .bool(
+                        forKey:
+                            permissionResetPendingKey
+                    )
+
+            var shouldRequest =
+                false
+
+            if !resetAlreadyPerformed {
+                _ =
+                    resetAsymptaPermissions()
+
+                UserDefaults
+                    .standard
+                    .set(
+                        true,
+                        forKey:
+                            permissionResetPendingKey
+                    )
+
+                shouldRequest =
+                    true
+            }
+
+            showPermissionGate(
+                autoRequest:
+                    shouldRequest
+            )
+        }
     }
 
     func applicationWillTerminate(
@@ -1795,10 +1880,19 @@ final class AppDelegate:
         breatheInImmediately()
     }
 
-    private func showPermissionGate() {
+    private func showPermissionGate(
+        autoRequest:
+            Bool = false
+    ) {
         if permissionGate != nil {
             permissionGate?
                 .showWindow(nil)
+
+            if autoRequest {
+                permissionGate?
+                    .beginApprovalRequests()
+            }
+
             return
         }
 
@@ -1865,6 +1959,13 @@ final class AppDelegate:
                             nil
                 }
 
+                UserDefaults
+                    .standard
+                    .removeObject(
+                        forKey:
+                            permissionResetPendingKey
+                    )
+
                 self
                     .enterMainMode(
                         screenVerified:
@@ -1895,6 +1996,11 @@ final class AppDelegate:
                 .activate(
                     options: []
                 )
+
+        if autoRequest {
+            gate
+                .beginApprovalRequests()
+        }
     }
 
     private func enterMainMode(
@@ -2011,7 +2117,10 @@ final class AppDelegate:
 
         if mainStarted
             && !accessibilityPermission {
-            showPermissionGate()
+            showPermissionGate(
+                autoRequest:
+                    false
+            )
         }
     }
 
@@ -2603,6 +2712,14 @@ final class AppDelegate:
         _ =
             resetAsymptaPermissions()
 
+        UserDefaults
+            .standard
+            .set(
+                true,
+                forKey:
+                    permissionResetPendingKey
+            )
+
         screenPermission =
             false
 
@@ -2612,7 +2729,10 @@ final class AppDelegate:
         mainStarted =
             false
 
-        showPermissionGate()
+        showPermissionGate(
+            autoRequest:
+                true
+        )
     }
 
     @objc
