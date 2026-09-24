@@ -28,6 +28,8 @@ private struct VisibleWindowTarget {
 
 private struct PreparedOverlay {
     let target: VisibleWindowTarget
+    let scWindow: SCWindow
+    let scale: CGFloat
     let backgroundImage: CGImage
     let borderImage: CGImage?
 }
@@ -35,15 +37,21 @@ private struct PreparedOverlay {
 @MainActor
 private final class WindowOverlay {
     let target: VisibleWindowTarget
+    let scWindow: SCWindow
+    let scale: CGFloat
     let panel: BreathPanel
     let view: BreathOverlayView
 
     init(
         target: VisibleWindowTarget,
+        scWindow: SCWindow,
+        scale: CGFloat,
         panel: BreathPanel,
         view: BreathOverlayView
     ) {
         self.target = target
+        self.scWindow = scWindow
+        self.scale = scale
         self.panel = panel
         self.view = view
     }
@@ -242,11 +250,138 @@ private func makeAlphaEdgeImage(
         )
 }
 
+private func makeTextOnlyImage(
+    from image: CGImage,
+    focusRect: CGRect
+) -> CGImage? {
+    let full =
+        CIImage(
+            cgImage: image
+        )
+
+    let clipped =
+        focusRect
+            .intersection(
+                full.extent
+            )
+            .insetBy(
+                dx: 2,
+                dy: 2
+            )
+
+    guard
+        !clipped.isNull,
+        clipped.width > 4,
+        clipped.height > 4
+    else {
+        return nil
+    }
+
+    let focus =
+        full
+            .cropped(
+                to: clipped
+            )
+
+    // Detect high-frequency foreground detail inside the editable control.
+    // This keeps glyphs/caret visible while leaving the field background covered.
+    let mono =
+        focus
+            .applyingFilter(
+                "CIPhotoEffectMono"
+            )
+
+    let edges =
+        mono
+            .applyingFilter(
+                "CIEdges",
+                parameters: [
+                    "inputIntensity": 2.6
+                ]
+            )
+            .cropped(
+                to: clipped
+            )
+
+    let boosted =
+        edges
+            .applyingFilter(
+                "CIColorControls",
+                parameters: [
+                    "inputSaturation": 0,
+                    "inputBrightness": -0.12,
+                    "inputContrast": 4.2
+                ]
+            )
+            .cropped(
+                to: clipped
+            )
+
+    let mask =
+        boosted
+            .applyingFilter(
+                "CIMorphologyMaximum",
+                parameters: [
+                    "inputRadius": 1.35
+                ]
+            )
+            .cropped(
+                to: clipped
+            )
+
+    let clearFocus =
+        CIImage(
+            color: .clear
+        )
+        .cropped(
+            to: clipped
+        )
+
+    let revealed =
+        focus
+            .applyingFilter(
+                "CIBlendWithMask",
+                parameters: [
+                    kCIInputBackgroundImageKey:
+                        clearFocus,
+                    kCIInputMaskImageKey:
+                        mask
+                ]
+            )
+            .cropped(
+                to: clipped
+            )
+
+    let clearFull =
+        CIImage(
+            color: .clear
+        )
+        .cropped(
+            to: full.extent
+        )
+
+    let composed =
+        revealed
+            .composited(
+                over: clearFull
+            )
+
+    return
+        ciContext
+            .createCGImage(
+                composed,
+                from: full.extent
+            )
+}
+
 @MainActor
 private final class BreathOverlayView:
     NSView {
 
     let coverImageView =
+        NSImageView()
+
+    let textImageView =
         NSImageView()
 
     let borderImageView =
@@ -272,6 +407,7 @@ private final class BreathOverlayView:
         for imageView
             in [
                 coverImageView,
+                textImageView,
                 borderImageView
             ] {
             imageView.frame =
@@ -303,6 +439,14 @@ private final class BreathOverlayView:
         coverImageView
             .alphaValue =
                 0
+
+        textImageView
+            .alphaValue =
+                1
+
+        textImageView
+            .isHidden =
+                true
 
         borderImageView
             .alphaValue =
@@ -346,80 +490,34 @@ private final class BreathOverlayView:
         }
     }
 
-    func setFocusHole(
-        _ rect:
-            CGRect?
+    func setTextReveal(
+        _ image:
+            CGImage?
     ) {
         guard
-            let rect
+            let image
         else {
-            coverImageView
-                .layer?
-                .mask =
-                    nil
+            textImageView
+                .isHidden =
+                    true
+
+            textImageView.image =
+                nil
+
             return
         }
 
-        let clipped =
-            rect.intersection(
-                bounds
+        textImageView.image =
+            NSImage(
+                cgImage:
+                    image,
+                size:
+                    bounds.size
             )
 
-        guard
-            !clipped.isNull,
-            clipped.width > 2,
-            clipped.height > 2
-        else {
-            coverImageView
-                .layer?
-                .mask =
-                    nil
-            return
-        }
-
-        let path =
-            CGMutablePath()
-
-        path.addRect(
-            bounds
-        )
-
-        path.addRoundedRect(
-            in:
-                clipped
-                    .insetBy(
-                        dx: -4,
-                        dy: -4
-                    )
-                    .intersection(
-                        bounds
-                    ),
-            cornerWidth:
-                7,
-            cornerHeight:
-                7
-        )
-
-        let mask =
-            CAShapeLayer()
-
-        mask.frame =
-            bounds
-
-        mask.path =
-            path
-
-        mask.fillRule =
-            .evenOdd
-
-        mask.fillColor =
-            NSColor.white
-                .cgColor
-
-        coverImageView
-            .layer?
-            .mask =
-                mask
+        textImageView
+            .isHidden =
+                false
     }
 }
 
@@ -455,6 +553,9 @@ private final class FadeSession {
 
     var focusTimer:
         Timer?
+
+    var focusRefreshInFlight =
+        false
 
     init(
         overlays:
@@ -2651,6 +2752,15 @@ final class AppDelegate:
                             PreparedOverlay(
                                 target:
                                     target,
+                                scWindow:
+                                    scWindow,
+                                scale:
+                                    self.backingScale(
+                                        for:
+                                            target
+                                                .window
+                                                .appKitFrame
+                                    ),
                                 backgroundImage:
                                     background,
                                 borderImage:
@@ -3055,6 +3165,12 @@ final class AppDelegate:
                     target:
                         item
                             .target,
+                    scWindow:
+                        item
+                            .scWindow,
+                    scale:
+                        item
+                            .scale,
                     panel:
                         panel,
                     view:
@@ -3215,16 +3331,20 @@ final class AppDelegate:
         session:
             FadeSession
     ) {
-        updateFocusHoles(
-            session:
-                session
-        )
+        Task {
+            @MainActor in
+
+            await updateTextReveal(
+                session:
+                    session
+            )
+        }
 
         session.focusTimer =
             Timer
                 .scheduledTimer(
                     withTimeInterval:
-                        0.12,
+                        0.08,
                     repeats:
                         true
                 ) {
@@ -3245,8 +3365,8 @@ final class AppDelegate:
                             return
                         }
 
-                        self
-                            .updateFocusHoles(
+                        await self
+                            .updateTextReveal(
                                 session:
                                     session
                             )
@@ -3254,26 +3374,37 @@ final class AppDelegate:
                 }
     }
 
-    private func updateFocusHoles(
+    private func updateTextReveal(
         session:
             FadeSession
-    ) {
+    ) async {
+        guard
+            !session
+                .focusRefreshInFlight
+        else {
+            return
+        }
+
+        session
+            .focusRefreshInFlight =
+                true
+
+        defer {
+            session
+                .focusRefreshInFlight =
+                    false
+        }
+
         guard
             let active =
                 NSWorkspace
                     .shared
                     .frontmostApplication
         else {
-            for overlay
-                in session
-                    .overlays {
-                overlay
-                    .view
-                    .setFocusHole(
-                        nil
-                    )
-            }
-
+            clearTextReveals(
+                session:
+                    session
+            )
             return
         }
 
@@ -3293,110 +3424,216 @@ final class AppDelegate:
                         activePID
                 )
         else {
-            for overlay
-                in session
-                    .overlays {
-                overlay
-                    .view
-                    .setFocusHole(
-                        nil
-                    )
-            }
-
+            clearTextReveals(
+                session:
+                    session
+            )
             return
         }
 
+        guard
+            let overlay =
+                session
+                    .overlays
+                    .first(
+                        where: {
+                            $0
+                                .target
+                                .app
+                                .processIdentifier
+                            == activePID
+
+                            && $0
+                                .target
+                                .window
+                                .cgFrame
+                                .intersects(
+                                    focused
+                                )
+                        }
+                    )
+        else {
+            clearTextReveals(
+                session:
+                    session
+            )
+            return
+        }
+
+        let windowFrame =
+            overlay
+                .target
+                .window
+                .cgFrame
+
+        let localX =
+            focused.minX
+            - windowFrame.minX
+
+        let localTop =
+            focused.minY
+            - windowFrame.minY
+
+        let localRectPoints =
+            CGRect(
+                x:
+                    localX,
+                y:
+                    windowFrame.height
+                    - localTop
+                    - focused.height,
+                width:
+                    focused.width,
+                height:
+                    focused.height
+            )
+
+        let windowArea =
+            max(
+                1,
+                windowFrame.width
+                * windowFrame.height
+            )
+
+        let focusArea =
+            localRectPoints.width
+            * localRectPoints.height
+
+        guard
+            focusArea
+            < windowArea
+                * 0.45
+        else {
+            clearTextReveals(
+                session:
+                    session
+            )
+            return
+        }
+
+        let config =
+            SCStreamConfiguration()
+
+        config.width =
+            max(
+                1,
+                Int(
+                    windowFrame.width
+                    * overlay.scale
+                )
+            )
+
+        config.height =
+            max(
+                1,
+                Int(
+                    windowFrame.height
+                    * overlay.scale
+                )
+            )
+
+        config.showsCursor =
+            false
+
+        config.queueDepth =
+            1
+
+        config.shouldBeOpaque =
+            false
+
+        config.ignoreShadowsSingleWindow =
+            true
+
+        do {
+            let filter =
+                SCContentFilter(
+                    desktopIndependentWindow:
+                        overlay
+                            .scWindow
+                )
+
+            let image =
+                try await
+                    SCScreenshotManager
+                        .captureImage(
+                            contentFilter:
+                                filter,
+                            configuration:
+                                config
+                        )
+
+            guard
+                self.session
+                === session,
+                session
+                    .remainingPIDs
+                    .contains(
+                        activePID
+                    )
+            else {
+                return
+            }
+
+            let pixelRect =
+                CGRect(
+                    x:
+                        localRectPoints.minX
+                        * overlay.scale,
+                    y:
+                        localRectPoints.minY
+                        * overlay.scale,
+                    width:
+                        localRectPoints.width
+                        * overlay.scale,
+                    height:
+                        localRectPoints.height
+                        * overlay.scale
+                )
+
+            let textOnly =
+                makeTextOnlyImage(
+                    from:
+                        image,
+                    focusRect:
+                        pixelRect
+                )
+
+            for item
+                in session
+                    .overlays {
+                if item
+                    === overlay {
+                    item
+                        .view
+                        .setTextReveal(
+                            textOnly
+                        )
+                } else {
+                    item
+                        .view
+                        .setTextReveal(
+                            nil
+                        )
+                }
+            }
+        } catch {
+            // Keep the app breathed out. A transient text-layer capture failure
+            // must never wake the app or block real keyboard input.
+        }
+    }
+
+    private func clearTextReveals(
+        session:
+            FadeSession
+    ) {
         for overlay
             in session
                 .overlays {
-            let pid =
-                overlay
-                    .target
-                    .app
-                    .processIdentifier
-
-            guard
-                pid
-                == activePID
-            else {
-                overlay
-                    .view
-                    .setFocusHole(
-                        nil
-                    )
-                continue
-            }
-
-            let windowFrame =
-                overlay
-                    .target
-                    .window
-                    .cgFrame
-
-            guard
-                windowFrame
-                    .intersects(
-                        focused
-                    )
-            else {
-                overlay
-                    .view
-                    .setFocusHole(
-                        nil
-                    )
-                continue
-            }
-
-            let localX =
-                focused.minX
-                - windowFrame.minX
-
-            let localTop =
-                focused.minY
-                - windowFrame.minY
-
-            let localRect =
-                CGRect(
-                    x:
-                        localX,
-                    y:
-                        windowFrame.height
-                        - localTop
-                        - focused.height,
-                    width:
-                        focused.width,
-                    height:
-                        focused.height
+            overlay
+                .view
+                .setTextReveal(
+                    nil
                 )
-
-            // Reject an AX frame so large that it is probably the whole web area,
-            // not the actual editable control.
-            let windowArea =
-                max(
-                    1,
-                    windowFrame.width
-                    * windowFrame.height
-                )
-
-            let focusArea =
-                localRect.width
-                * localRect.height
-
-            if focusArea
-                > windowArea
-                    * 0.45 {
-                overlay
-                    .view
-                    .setFocusHole(
-                        nil
-                    )
-            } else {
-                overlay
-                    .view
-                    .setFocusHole(
-                        localRect
-                    )
-            }
         }
     }
 
@@ -3573,6 +3810,13 @@ final class AppDelegate:
                     overlay
                         .view
                         .coverImageView
+                        .animator()
+                        .alphaValue =
+                            0
+
+                    overlay
+                        .view
+                        .textImageView
                         .animator()
                         .alphaValue =
                             0
@@ -3805,9 +4049,9 @@ final class AppDelegate:
                     ),
 
                 cgFrame.width
-                    >= 40,
+                    >= 16,
                 cgFrame.height
-                    >= 40,
+                    >= 16,
 
                 let app =
                     NSRunningApplication(
