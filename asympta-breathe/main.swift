@@ -26,31 +26,40 @@ private struct VisibleWindowTarget {
     let window: TargetWindow
 }
 
-private struct CapturedWindow {
+private struct PreparedOverlay {
     let target: VisibleWindowTarget
-    let scWindow: SCWindow
-    let image: CGImage
-    let scale: CGFloat
+    let backgroundImage: CGImage
+    let borderImage: CGImage?
 }
 
-private struct AXWindowState {
-    let element: AXUIElement
-    let originalPosition: CGPoint
-}
+@MainActor
+private final class WindowOverlay {
+    let target: VisibleWindowTarget
+    let panel: BreathPanel
+    let view: BreathOverlayView
 
-private struct AppDisplacement {
-    let app: NSRunningApplication
-    let axWindows: [AXWindowState]
-    let hiddenFallback: Bool
+    init(
+        target: VisibleWindowTarget,
+        panel: BreathPanel,
+        view: BreathOverlayView
+    ) {
+        self.target = target
+        self.panel = panel
+        self.view = view
+    }
 }
 
 private func resetTCCService(
     _ service: String
 ) -> Bool {
     let process = Process()
-    process.executableURL = URL(
-        fileURLWithPath: "/usr/bin/tccutil"
-    )
+
+    process.executableURL =
+        URL(
+            fileURLWithPath:
+                "/usr/bin/tccutil"
+        )
+
     process.arguments = [
         "reset",
         service,
@@ -61,36 +70,44 @@ private func resetTCCService(
     do {
         try process.run()
         process.waitUntilExit()
-        return process.terminationStatus == 0
+
+        return
+            process.terminationStatus
+            == 0
     } catch {
         return false
     }
 }
 
-private func resetAsymptaPermissions() -> Bool {
+private func resetAsymptaPermissions()
+    -> Bool {
     let screenReset =
-        resetTCCService("ScreenCapture")
-    let accessibilityReset =
-        resetTCCService("Accessibility")
+        resetTCCService(
+            "ScreenCapture"
+        )
 
-    return screenReset && accessibilityReset
+    let accessibilityReset =
+        resetTCCService(
+            "Accessibility"
+        )
+
+    return
+        screenReset
+        && accessibilityReset
 }
 
-private func verifyScreenCaptureCapability(
-    forceProbe: Bool
-) async -> Bool {
-    if !forceProbe
-        && !CGPreflightScreenCaptureAccess() {
-        return false
-    }
-
+private func verifyScreenCaptureCapability()
+    async -> Bool {
     do {
         _ =
-            try await SCShareableContent
-                .excludingDesktopWindows(
-                    false,
-                    onScreenWindowsOnly: true
-                )
+            try await
+                SCShareableContent
+                    .excludingDesktopWindows(
+                        false,
+                        onScreenWindowsOnly:
+                            true
+                    )
+
         return true
     } catch {
         return false
@@ -111,32 +128,36 @@ private func stableAppColor(
         .systemYellow
     ]
 
-    var hash: UInt64 =
-        1469598103934665603
+    var hash:
+        UInt64 =
+            1469598103934665603
 
     for byte in bundleID.utf8 {
         hash ^= UInt64(byte)
-        hash &*= 1099511628211
+        hash &*=
+            1099511628211
     }
 
-    return palette[
-        Int(
-            hash
-            % UInt64(palette.count)
-        )
-    ]
+    return
+        palette[
+            Int(
+                hash
+                % UInt64(
+                    palette.count
+                )
+            )
+        ]
 }
 
 private func makeAlphaEdgeImage(
     from image: CGImage,
     color: NSColor
 ) -> CGImage? {
-    let input = CIImage(
-        cgImage: image
-    )
+    let input =
+        CIImage(
+            cgImage: image
+        )
 
-    // Convert the source alpha into a grayscale mask first.
-    // R/G/B/A all contain the original window alpha.
     let alphaVector =
         CIVector(
             x: 0,
@@ -149,19 +170,23 @@ private func makeAlphaEdgeImage(
         input.applyingFilter(
             "CIColorMatrix",
             parameters: [
-                "inputRVector": alphaVector,
-                "inputGVector": alphaVector,
-                "inputBVector": alphaVector,
-                "inputAVector": alphaVector
+                "inputRVector":
+                    alphaVector,
+                "inputGVector":
+                    alphaVector,
+                "inputBVector":
+                    alphaVector,
+                "inputAVector":
+                    alphaVector
             ]
         )
 
-    // Extract only the actual window silhouette edge.
     let edge =
         alphaImage.applyingFilter(
             "CIMorphologyGradient",
             parameters: [
-                "inputRadius": 1.35
+                "inputRadius":
+                    1.15
             ]
         )
 
@@ -171,38 +196,37 @@ private func makeAlphaEdgeImage(
         )
         ?? color
 
-    // IMPORTANT:
-    // The alpha of the border must come from edge intensity (edge.R),
-    // not the original window alpha. Otherwise the whole rectangular
-    // border image becomes opaque black over the faded app.
     let tinted =
         edge.applyingFilter(
             "CIColorMatrix",
             parameters: [
                 "inputRVector":
                     CIVector(
-                        x: rgb.redComponent,
+                        x:
+                            rgb.redComponent,
                         y: 0,
                         z: 0,
                         w: 0
                     ),
                 "inputGVector":
                     CIVector(
-                        x: rgb.greenComponent,
+                        x:
+                            rgb.greenComponent,
                         y: 0,
                         z: 0,
                         w: 0
                     ),
                 "inputBVector":
                     CIVector(
-                        x: rgb.blueComponent,
+                        x:
+                            rgb.blueComponent,
                         y: 0,
                         z: 0,
                         w: 0
                     ),
                 "inputAVector":
                     CIVector(
-                        x: 0.72,
+                        x: 0.58,
                         y: 0,
                         z: 0,
                         w: 0
@@ -210,200 +234,242 @@ private func makeAlphaEdgeImage(
             ]
         )
 
-    return ciContext.createCGImage(
-        tinted,
-        from: input.extent
-    )
+    return
+        ciContext.createCGImage(
+            tinted,
+            from:
+                input.extent
+        )
 }
 
 @MainActor
-private final class BreathOverlayView: NSView {
-    let baseImageView = NSImageView()
-    let borderImageView = NSImageView()
-    let focusImageView = NSImageView()
+private final class BreathOverlayView:
+    NSView {
 
-    var onClick: (() -> Void)?
+    let coverImageView =
+        NSImageView()
+
+    let borderImageView =
+        NSImageView()
 
     override init(
-        frame frameRect: NSRect
+        frame frameRect:
+            NSRect
     ) {
         super.init(
-            frame: frameRect
+            frame:
+                frameRect
         )
 
-        wantsLayer = true
-        layer?.backgroundColor =
-            NSColor.clear.cgColor
-        layer?.masksToBounds = false
+        wantsLayer =
+            true
 
-        for imageView in [
-            baseImageView,
-            borderImageView,
-            focusImageView
-        ] {
-            imageView.frame = bounds
-            imageView.autoresizingMask = [
-                .width,
-                .height
-            ]
-            imageView.imageScaling =
-                .scaleAxesIndependently
-            imageView.imageAlignment =
-                .alignCenter
-            imageView.wantsLayer = true
-            addSubview(imageView)
+        layer?
+            .backgroundColor =
+                NSColor.clear
+                    .cgColor
+
+        for imageView
+            in [
+                coverImageView,
+                borderImageView
+            ] {
+            imageView.frame =
+                bounds
+
+            imageView
+                .autoresizingMask = [
+                    .width,
+                    .height
+                ]
+
+            imageView
+                .imageScaling =
+                    .scaleAxesIndependently
+
+            imageView
+                .imageAlignment =
+                    .alignCenter
+
+            imageView
+                .wantsLayer =
+                    true
+
+            addSubview(
+                imageView
+            )
         }
 
-        baseImageView.alphaValue = 1
-        borderImageView.alphaValue = 1
-        focusImageView.alphaValue = 1
-        focusImageView.isHidden = true
+        coverImageView
+            .alphaValue =
+                0
+
+        borderImageView
+            .alphaValue =
+                0
     }
 
     required init?(
-        coder: NSCoder
+        coder:
+            NSCoder
     ) {
         fatalError(
             "init(coder:) has not been implemented"
         )
     }
 
-    override func acceptsFirstMouse(
-        for event: NSEvent?
-    ) -> Bool {
-        true
-    }
-
-    override func mouseDown(
-        with event: NSEvent
-    ) {
-        onClick?()
-    }
-
     func install(
-        image: CGImage,
-        borderColor: NSColor
+        background:
+            CGImage,
+        border:
+            CGImage?
     ) {
-        baseImageView.image =
+        coverImageView.image =
             NSImage(
-                cgImage: image,
-                size: bounds.size
+                cgImage:
+                    background,
+                size:
+                    bounds.size
             )
 
-        if let border =
-            makeAlphaEdgeImage(
-                from: image,
-                color: borderColor
-            ) {
+        if let border {
             borderImageView.image =
                 NSImage(
-                    cgImage: border,
-                    size: bounds.size
+                    cgImage:
+                        border,
+                    size:
+                        bounds.size
                 )
+        } else {
+            borderImageView.image =
+                nil
         }
     }
 
-    func setBaseImage(
-        _ image: CGImage
+    func setFocusHole(
+        _ rect:
+            CGRect?
     ) {
-        baseImageView.image =
-            NSImage(
-                cgImage: image,
-                size: bounds.size
-            )
-    }
-
-    func showFocusedRegion(
-        image: CGImage,
-        localRect: CGRect
-    ) {
-        focusImageView.image =
-            NSImage(
-                cgImage: image,
-                size: bounds.size
-            )
-
-        let padded =
-            localRect.insetBy(
-                dx: -5,
-                dy: -5
-            )
-            .intersection(bounds)
-
         guard
-            !padded.isNull,
-            padded.width > 1,
-            padded.height > 1
+            let rect
         else {
-            focusImageView.isHidden = true
-            focusImageView.layer?.mask = nil
+            coverImageView
+                .layer?
+                .mask =
+                    nil
             return
         }
 
-        let mask = CAShapeLayer()
-        mask.frame = bounds
-        mask.path =
-            CGPath(
-                roundedRect: padded,
-                cornerWidth: 7,
-                cornerHeight: 7,
-                transform: nil
+        let clipped =
+            rect.intersection(
+                bounds
             )
+
+        guard
+            !clipped.isNull,
+            clipped.width > 2,
+            clipped.height > 2
+        else {
+            coverImageView
+                .layer?
+                .mask =
+                    nil
+            return
+        }
+
+        let path =
+            CGMutablePath()
+
+        path.addRect(
+            bounds
+        )
+
+        path.addRoundedRect(
+            in:
+                clipped
+                    .insetBy(
+                        dx: -4,
+                        dy: -4
+                    )
+                    .intersection(
+                        bounds
+                    ),
+            cornerWidth:
+                7,
+            cornerHeight:
+                7
+        )
+
+        let mask =
+            CAShapeLayer()
+
+        mask.frame =
+            bounds
+
+        mask.path =
+            path
+
+        mask.fillRule =
+            .evenOdd
+
         mask.fillColor =
-            NSColor.white.cgColor
+            NSColor.white
+                .cgColor
 
-        focusImageView.layer?.mask =
-            mask
-        focusImageView.isHidden = false
-    }
-
-    func hideFocusedRegion() {
-        focusImageView.isHidden = true
-        focusImageView.layer?.mask = nil
+        coverImageView
+            .layer?
+            .mask =
+                mask
     }
 }
 
-private final class BreathPanel: NSPanel {
-    override var canBecomeKey: Bool {
+private final class BreathPanel:
+    NSPanel {
+
+    override var canBecomeKey:
+        Bool {
         false
     }
 
-    override var canBecomeMain: Bool {
+    override var canBecomeMain:
+        Bool {
         false
     }
 }
 
 @MainActor
 private final class FadeSession {
-    let captured: [CapturedWindow]
-    let panels: [BreathPanel]
-    let views: [BreathOverlayView]
+    var overlays:
+        [WindowOverlay]
 
-    let typingPID: pid_t?
+    var restoredPIDs:
+        Set<pid_t> =
+            []
 
-    var displacements: [AppDisplacement] = []
-    var inhalingPIDs: Set<pid_t> = []
-    var restoredPIDs: Set<pid_t> = []
+    var inhalingPIDs:
+        Set<pid_t> =
+            []
 
-    var typingTimer: Timer?
-    var typingRefreshInFlight = false
+    var clickMonitor:
+        Any?
+
+    var focusTimer:
+        Timer?
 
     init(
-        captured: [CapturedWindow],
-        panels: [BreathPanel],
-        views: [BreathOverlayView],
-        typingPID: pid_t?
+        overlays:
+            [WindowOverlay]
     ) {
-        self.captured = captured
-        self.panels = panels
-        self.views = views
-        self.typingPID = typingPID
+        self.overlays =
+            overlays
     }
 
-    var allPIDs: Set<pid_t> {
+    var allPIDs:
+        Set<pid_t> {
         Set(
-            captured.map {
-                $0.target.app
+            overlays.map {
+                $0.target
+                    .app
                     .processIdentifier
             }
         )
@@ -416,10 +482,22 @@ private final class FadeSession {
         )
     }
 
-    func stopTypingTimer() {
-        typingTimer?.invalidate()
-        typingTimer = nil
-        typingRefreshInFlight = false
+    func cleanupMonitors() {
+        if let clickMonitor {
+            NSEvent
+                .removeMonitor(
+                    clickMonitor
+                )
+
+            self.clickMonitor =
+                nil
+        }
+
+        focusTimer?
+            .invalidate()
+
+        focusTimer =
+            nil
     }
 }
 
@@ -432,46 +510,60 @@ private final class PermissionGateController:
 
     private let screenIcon =
         NSImageView()
+
     private let screenStatus =
         NSTextField(
             labelWithString:
                 "Checking…"
         )
+
     private let screenButton =
         NSButton(
-            title: "Allow",
-            target: nil,
-            action: nil
+            title:
+                "Allow",
+            target:
+                nil,
+            action:
+                nil
         )
 
     private let accessibilityIcon =
         NSImageView()
+
     private let accessibilityStatus =
         NSTextField(
             labelWithString:
                 "Checking…"
         )
+
     private let accessibilityButton =
         NSButton(
-            title: "Allow",
-            target: nil,
-            action: nil
+            title:
+                "Allow",
+            target:
+                nil,
+            action:
+                nil
         )
 
     private let resetButton =
         NSButton(
             title:
                 "Reset & Re-Approve",
-            target: nil,
-            action: nil
+            target:
+                nil,
+            action:
+                nil
         )
 
     private let refreshButton =
         NSButton(
             title:
                 "Refresh Permissions",
-            target: nil,
-            action: nil
+            target:
+                nil,
+            action:
+                nil
         )
 
     private let footerStatus =
@@ -480,41 +572,52 @@ private final class PermissionGateController:
                 "Both permissions must be verified before Asympta Breathe can start."
         )
 
-    private var pollTimer: Timer?
-    private var didDeliverReady =
-        false
+    private var pollTimer:
+        Timer?
+
     private var refreshInProgress =
+        false
+
+    private var didDeliverReady =
         false
 
     private var screenVerified =
         false
+
     private var accessibilityVerified =
         false
 
     init() {
-        let window = NSWindow(
-            contentRect:
-                NSRect(
-                    x: 0,
-                    y: 0,
-                    width: 560,
-                    height: 405
-                ),
-            styleMask: [
-                .titled
-            ],
-            backing: .buffered,
-            defer: false
-        )
+        let window =
+            NSWindow(
+                contentRect:
+                    NSRect(
+                        x: 0,
+                        y: 0,
+                        width: 560,
+                        height: 405
+                    ),
+                styleMask: [
+                    .titled
+                ],
+                backing:
+                    .buffered,
+                defer:
+                    false
+            )
 
         window.title =
             "Asympta Breathe"
-        window.isReleasedWhenClosed =
-            false
+
+        window
+            .isReleasedWhenClosed =
+                false
+
         window.center()
 
         super.init(
-            window: window
+            window:
+                window
         )
 
         configureUI()
@@ -522,7 +625,8 @@ private final class PermissionGateController:
     }
 
     required init?(
-        coder: NSCoder
+        coder:
+            NSCoder
     ) {
         fatalError(
             "init(coder:) has not been implemented"
@@ -530,19 +634,25 @@ private final class PermissionGateController:
     }
 
     deinit {
-        pollTimer?.invalidate()
+        pollTimer?
+            .invalidate()
     }
 
     func stop() {
-        pollTimer?.invalidate()
-        pollTimer = nil
+        pollTimer?
+            .invalidate()
+
+        pollTimer =
+            nil
+
         close()
     }
 
     private func configureUI() {
         guard
             let contentView =
-                window?.contentView
+                window?
+                    .contentView
         else {
             return
         }
@@ -552,10 +662,13 @@ private final class PermissionGateController:
                 labelWithString:
                     "Permissions"
             )
+
         title.font =
             .systemFont(
-                ofSize: 24,
-                weight: .semibold
+                ofSize:
+                    24,
+                weight:
+                    .semibold
             )
 
         let subtitle =
@@ -564,11 +677,15 @@ private final class PermissionGateController:
                     "Asympta Breathe verifies Screen Recording and Accessibility before starting. "
                     + "The page refreshes automatically, or you can verify immediately."
             )
-        subtitle.textColor =
-            .secondaryLabelColor
+
+        subtitle
+            .textColor =
+                .secondaryLabelColor
+
         subtitle.font =
             .systemFont(
-                ofSize: 13
+                ofSize:
+                    13
             )
 
         let screenRow =
@@ -611,41 +728,58 @@ private final class PermissionGateController:
                     )
             )
 
-        resetButton.target = self
+        resetButton.target =
+            self
+
         resetButton.action =
             #selector(
                 resetAndReapprove
             )
-        resetButton.bezelStyle =
-            .rounded
 
-        refreshButton.target = self
+        resetButton
+            .bezelStyle =
+                .rounded
+
+        refreshButton.target =
+            self
+
         refreshButton.action =
             #selector(
                 refreshNow
             )
-        refreshButton.bezelStyle =
-            .rounded
-        refreshButton.keyEquivalent =
-            "\r"
+
+        refreshButton
+            .bezelStyle =
+                .rounded
+
+        refreshButton
+            .keyEquivalent =
+                "\r"
 
         footerStatus.font =
             .systemFont(
-                ofSize: 12,
-                weight: .medium
+                ofSize:
+                    12,
+                weight:
+                    .medium
             )
-        footerStatus.textColor =
-            .secondaryLabelColor
+
+        footerStatus
+            .textColor =
+                .secondaryLabelColor
 
         let quit =
             NSButton(
-                title: "Quit",
-                target: self,
+                title:
+                    "Quit",
+                target:
+                    self,
                 action:
                     #selector(
                         quitApp
                     )
             )
+
         quit.bezelStyle =
             .rounded
 
@@ -659,11 +793,15 @@ private final class PermissionGateController:
                     quit
                 ]
             )
+
         footer.orientation =
             .horizontal
+
         footer.alignment =
             .centerY
-        footer.spacing = 10
+
+        footer.spacing =
+            10
 
         let stack =
             NSStackView(
@@ -677,85 +815,116 @@ private final class PermissionGateController:
                     footer
                 ]
             )
+
         stack.orientation =
             .vertical
+
         stack.alignment =
             .leading
-        stack.spacing = 16
-        stack.translatesAutoresizingMaskIntoConstraints =
-            false
 
-        contentView.addSubview(
-            stack
-        )
+        stack.spacing =
+            16
 
-        NSLayoutConstraint.activate([
-            stack.leadingAnchor
-                .constraint(
-                    equalTo:
-                        contentView
-                            .leadingAnchor,
-                    constant: 26
-                ),
-            stack.trailingAnchor
-                .constraint(
-                    equalTo:
-                        contentView
-                            .trailingAnchor,
-                    constant: -26
-                ),
-            stack.topAnchor
-                .constraint(
-                    equalTo:
-                        contentView
-                            .topAnchor,
-                    constant: 26
-                ),
-            stack.bottomAnchor
-                .constraint(
-                    lessThanOrEqualTo:
-                        contentView
-                            .bottomAnchor,
-                    constant: -22
-                ),
-            subtitle.widthAnchor
-                .constraint(
-                    equalTo:
-                        stack.widthAnchor
-                ),
-            screenRow.widthAnchor
-                .constraint(
-                    equalTo:
-                        stack.widthAnchor
-                ),
-            accessibilityRow.widthAnchor
-                .constraint(
-                    equalTo:
-                        stack.widthAnchor
-                ),
-            footer.widthAnchor
-                .constraint(
-                    equalTo:
-                        stack.widthAnchor
-                )
-        ])
+        stack
+            .translatesAutoresizingMaskIntoConstraints =
+                false
 
-        Task { [weak self] in
-            await self?.refresh(
-                forceScreenProbe:
-                    false
+        contentView
+            .addSubview(
+                stack
             )
+
+        NSLayoutConstraint
+            .activate([
+                stack
+                    .leadingAnchor
+                    .constraint(
+                        equalTo:
+                            contentView
+                                .leadingAnchor,
+                        constant:
+                            26
+                    ),
+                stack
+                    .trailingAnchor
+                    .constraint(
+                        equalTo:
+                            contentView
+                                .trailingAnchor,
+                        constant:
+                            -26
+                    ),
+                stack
+                    .topAnchor
+                    .constraint(
+                        equalTo:
+                            contentView
+                                .topAnchor,
+                        constant:
+                            26
+                    ),
+                stack
+                    .bottomAnchor
+                    .constraint(
+                        lessThanOrEqualTo:
+                            contentView
+                                .bottomAnchor,
+                        constant:
+                            -22
+                    ),
+                subtitle
+                    .widthAnchor
+                    .constraint(
+                        equalTo:
+                            stack
+                                .widthAnchor
+                    ),
+                screenRow
+                    .widthAnchor
+                    .constraint(
+                        equalTo:
+                            stack
+                                .widthAnchor
+                    ),
+                accessibilityRow
+                    .widthAnchor
+                    .constraint(
+                        equalTo:
+                            stack
+                                .widthAnchor
+                    ),
+                footer
+                    .widthAnchor
+                    .constraint(
+                        equalTo:
+                            stack
+                                .widthAnchor
+                    )
+            ])
+
+        Task {
+            [weak self] in
+
+            await self?
+                .refresh()
         }
     }
 
     private func permissionRow(
-        symbol: String,
-        title: String,
-        detail: String,
-        icon: NSImageView,
-        status: NSTextField,
-        button: NSButton,
-        action: Selector
+        symbol:
+            String,
+        title:
+            String,
+        detail:
+            String,
+        icon:
+            NSImageView,
+        status:
+            NSTextField,
+        button:
+            NSButton,
+        action:
+            Selector
     ) -> NSView {
         icon.image =
             NSImage(
@@ -764,24 +933,33 @@ private final class PermissionGateController:
                 accessibilityDescription:
                     title
             )
-        icon.symbolConfiguration =
-            NSImage
-                .SymbolConfiguration(
-                    pointSize: 19,
-                    weight: .medium
-                )
-        icon.translatesAutoresizingMaskIntoConstraints =
-            false
+
+        icon
+            .symbolConfiguration =
+                NSImage
+                    .SymbolConfiguration(
+                        pointSize:
+                            19,
+                        weight:
+                            .medium
+                    )
+
+        icon
+            .translatesAutoresizingMaskIntoConstraints =
+                false
 
         let titleField =
             NSTextField(
                 labelWithString:
                     title
             )
+
         titleField.font =
             .systemFont(
-                ofSize: 15,
-                weight: .semibold
+                ofSize:
+                    15,
+                weight:
+                    .semibold
             )
 
         let detailField =
@@ -789,17 +967,23 @@ private final class PermissionGateController:
                 wrappingLabelWithString:
                     detail
             )
-        detailField.textColor =
-            .secondaryLabelColor
+
+        detailField
+            .textColor =
+                .secondaryLabelColor
+
         detailField.font =
             .systemFont(
-                ofSize: 12
+                ofSize:
+                    12
             )
 
         status.font =
             .systemFont(
-                ofSize: 12,
-                weight: .medium
+                ofSize:
+                    12,
+                weight:
+                    .medium
             )
 
         let textStack =
@@ -810,14 +994,22 @@ private final class PermissionGateController:
                     status
                 ]
             )
+
         textStack.orientation =
             .vertical
+
         textStack.alignment =
             .leading
-        textStack.spacing = 3
 
-        button.target = self
-        button.action = action
+        textStack.spacing =
+            3
+
+        button.target =
+            self
+
+        button.action =
+            action
+
         button.bezelStyle =
             .rounded
 
@@ -830,104 +1022,115 @@ private final class PermissionGateController:
                     button
                 ]
             )
+
         row.orientation =
             .horizontal
+
         row.alignment =
             .centerY
-        row.spacing = 12
 
-        NSLayoutConstraint.activate([
-            icon.widthAnchor
-                .constraint(
-                    equalToConstant:
-                        28
-                ),
-            icon.heightAnchor
-                .constraint(
-                    equalToConstant:
-                        28
-                ),
-            button.widthAnchor
-                .constraint(
-                    greaterThanOrEqualToConstant:
-                        82
-                )
-        ])
+        row.spacing =
+            12
+
+        NSLayoutConstraint
+            .activate([
+                icon
+                    .widthAnchor
+                    .constraint(
+                        equalToConstant:
+                            28
+                    ),
+                icon
+                    .heightAnchor
+                    .constraint(
+                        equalToConstant:
+                            28
+                    ),
+                button
+                    .widthAnchor
+                    .constraint(
+                        greaterThanOrEqualToConstant:
+                            82
+                    )
+            ])
 
         return row
     }
 
     private func separator()
         -> NSView {
-        let box = NSBox()
-        box.boxType = .separator
+        let box =
+            NSBox()
+
+        box.boxType =
+            .separator
+
         return box
     }
 
     private func startMonitoring() {
-        pollTimer?.invalidate()
+        pollTimer?
+            .invalidate()
 
         pollTimer =
-            Timer.scheduledTimer(
-                withTimeInterval:
-                    0.50,
-                repeats: true
-            ) {
-                [weak self] _ in
+            Timer
+                .scheduledTimer(
+                    withTimeInterval:
+                        0.50,
+                    repeats:
+                        true
+                ) {
+                    [weak self]
+                    _ in
 
-                Task { @MainActor in
-                    await self?.refresh(
-                        forceScreenProbe:
-                            false
-                    )
+                    Task {
+                        @MainActor in
+
+                        await self?
+                            .refresh()
+                    }
                 }
-            }
     }
 
-    private func refresh(
-        forceScreenProbe: Bool
-    ) async {
+    private func refresh()
+        async {
         guard
             !refreshInProgress
         else {
             return
         }
 
-        refreshInProgress = true
+        refreshInProgress =
+            true
 
-        resetButton.isEnabled =
-            false
-        refreshButton.isEnabled =
-            false
+        resetButton
+            .isEnabled =
+                false
+
+        refreshButton
+            .isEnabled =
+                false
+
+        screenStatus
+            .stringValue =
+                "Verifying…"
 
         accessibilityStatus
             .stringValue =
                 "Checking…"
-        screenStatus.stringValue =
-            forceScreenProbe
-            ? "Verifying capture access…"
-            : "Checking…"
+
+        async let screenCheck =
+            verifyScreenCaptureCapability()
 
         let accessibilityAllowed =
             AXIsProcessTrusted()
 
-        let screenAllowed: Bool
-
-        if CGPreflightScreenCaptureAccess()
-            || forceScreenProbe {
-            screenAllowed =
-                await
-                    verifyScreenCaptureCapability(
-                        forceProbe:
-                            true
-                    )
-        } else {
-            screenAllowed =
-                false
-        }
+        let screenAllowed =
+            await screenCheck
 
         screenVerified =
             screenAllowed
+
         accessibilityVerified =
             accessibilityAllowed
 
@@ -955,17 +1158,24 @@ private final class PermissionGateController:
 
         refreshInProgress =
             false
-        resetButton.isEnabled =
-            true
-        refreshButton.isEnabled =
-            true
+
+        resetButton
+            .isEnabled =
+                true
+
+        refreshButton
+            .isEnabled =
+                true
 
         if screenVerified
             && accessibilityVerified {
-            footerStatus.stringValue =
-                "Verified. Opening Asympta Breathe…"
-            footerStatus.textColor =
-                .systemGreen
+            footerStatus
+                .stringValue =
+                    "Verified. Opening Asympta Breathe…"
+
+            footerStatus
+                .textColor =
+                    .systemGreen
 
             guard
                 !didDeliverReady
@@ -976,93 +1186,135 @@ private final class PermissionGateController:
             didDeliverReady =
                 true
 
-            pollTimer?.invalidate()
-            pollTimer = nil
+            pollTimer?
+                .invalidate()
 
-            DispatchQueue.main
+            pollTimer =
+                nil
+
+            DispatchQueue
+                .main
                 .asyncAfter(
                     deadline:
                         .now()
                         + 0.25
-                ) { [weak self] in
+                ) {
+                    [weak self]
+                    in
+
                     guard
                         let self
                     else {
                         return
                     }
 
-                    self.onReady?(
-                        self.screenVerified,
-                        self.accessibilityVerified
-                    )
+                    self
+                        .onReady?(
+                            self
+                                .screenVerified,
+                            self
+                                .accessibilityVerified
+                        )
                 }
         } else {
-            footerStatus.stringValue =
-                "Both permissions must be verified before Asympta Breathe can start."
-            footerStatus.textColor =
-                .secondaryLabelColor
+            footerStatus
+                .stringValue =
+                    "Both permissions must be verified before Asympta Breathe can start."
+
+            footerStatus
+                .textColor =
+                    .secondaryLabelColor
         }
     }
 
     private func updatePermission(
-        allowed: Bool,
-        icon: NSImageView,
-        status: NSTextField,
-        button: NSButton
+        allowed:
+            Bool,
+        icon:
+            NSImageView,
+        status:
+            NSTextField,
+        button:
+            NSButton
     ) {
         if allowed {
-            icon.contentTintColor =
-                .systemGreen
-            status.stringValue =
-                "Verified"
-            status.textColor =
-                .systemGreen
+            icon
+                .contentTintColor =
+                    .systemGreen
+
+            status
+                .stringValue =
+                    "Verified"
+
+            status
+                .textColor =
+                    .systemGreen
+
             button.title =
                 "Allowed"
-            button.isEnabled =
-                false
+
+            button
+                .isEnabled =
+                    false
         } else {
-            icon.contentTintColor =
-                .secondaryLabelColor
-            status.stringValue =
-                "Not verified"
-            status.textColor =
-                .secondaryLabelColor
+            icon
+                .contentTintColor =
+                    .secondaryLabelColor
+
+            status
+                .stringValue =
+                    "Not verified"
+
+            status
+                .textColor =
+                    .secondaryLabelColor
+
             button.title =
                 "Allow"
-            button.isEnabled =
-                true
+
+            button
+                .isEnabled =
+                    true
         }
     }
 
     @objc
     private func refreshNow() {
-        Task { [weak self] in
-            await self?.refresh(
-                forceScreenProbe:
-                    true
-            )
+        Task {
+            [weak self]
+            in
+
+            await self?
+                .refresh()
         }
     }
 
     @objc
     private func resetAndReapprove() {
-        let alert = NSAlert()
+        let alert =
+            NSAlert()
+
         alert.messageText =
             "Reset permissions?"
-        alert.informativeText =
-            "This removes Asympta Breathe's current Screen Recording "
-            + "and Accessibility approvals, then asks macOS for both again."
+
+        alert
+            .informativeText =
+                "This removes Asympta Breathe's current Screen Recording and Accessibility approvals, then asks macOS for both again."
+
         alert.alertStyle =
             .warning
-        alert.addButton(
-            withTitle:
-                "Reset & Re-Approve"
-        )
-        alert.addButton(
-            withTitle:
-                "Cancel"
-        )
+
+        alert
+            .addButton(
+                withTitle:
+                    "Reset & Re-Approve"
+            )
+
+        alert
+            .addButton(
+                withTitle:
+                    "Cancel"
+            )
 
         guard
             alert.runModal()
@@ -1071,49 +1323,69 @@ private final class PermissionGateController:
             return
         }
 
-        pollTimer?.invalidate()
-        pollTimer = nil
+        pollTimer?
+            .invalidate()
+
+        pollTimer =
+            nil
 
         didDeliverReady =
             false
+
         screenVerified =
             false
+
         accessibilityVerified =
             false
 
-        footerStatus.stringValue =
-            "Removing existing approvals…"
-        footerStatus.textColor =
-            .secondaryLabelColor
+        footerStatus
+            .stringValue =
+                "Removing existing approvals…"
 
-        let resetSucceeded =
+        footerStatus
+            .textColor =
+                .secondaryLabelColor
+
+        let succeeded =
             resetAsymptaPermissions()
 
-        if !resetSucceeded {
-            footerStatus.stringValue =
-                "macOS could not reset one or more approvals. Remove Asympta Breathe "
-                + "manually in Privacy & Security, then press Refresh Permissions."
-            footerStatus.textColor =
-                .systemRed
+        if !succeeded {
+            footerStatus
+                .stringValue =
+                    "macOS could not reset one or more approvals. Remove Asympta Breathe manually in Privacy & Security, then press Refresh Permissions."
+
+            footerStatus
+                .textColor =
+                    .systemRed
+
             startMonitoring()
             return
         }
 
-        screenStatus.stringValue =
-            "Reset — approval required"
-        accessibilityStatus.stringValue =
-            "Reset — approval required"
-        footerStatus.stringValue =
-            "Reset complete. Approve both permissions again."
+        screenStatus
+            .stringValue =
+                "Reset — approval required"
+
+        accessibilityStatus
+            .stringValue =
+                "Reset — approval required"
+
+        footerStatus
+            .stringValue =
+                "Reset complete. Approve both permissions again."
 
         startMonitoring()
 
-        DispatchQueue.main
+        DispatchQueue
+            .main
             .asyncAfter(
                 deadline:
                     .now()
                     + 0.30
-            ) { [weak self] in
+            ) {
+                [weak self]
+                in
+
                 guard
                     let self
                 else {
@@ -1127,6 +1399,7 @@ private final class PermissionGateController:
                     kAXTrustedCheckOptionPrompt
                         .takeUnretainedValue()
                     as String
+
                 let options =
                     [key: true]
                     as CFDictionary
@@ -1136,11 +1409,11 @@ private final class PermissionGateController:
                         options
                     )
 
-                Task { @MainActor in
-                    await self.refresh(
-                        forceScreenProbe:
-                            true
-                    )
+                Task {
+                    @MainActor in
+
+                    await self
+                        .refresh()
                 }
             }
     }
@@ -1158,17 +1431,21 @@ private final class PermissionGateController:
             }
         }
 
-        DispatchQueue.main
+        DispatchQueue
+            .main
             .asyncAfter(
                 deadline:
                     .now()
                     + 0.35
-            ) { [weak self] in
-                Task { @MainActor in
-                    await self?.refresh(
-                        forceScreenProbe:
-                            true
-                    )
+            ) {
+                [weak self]
+                in
+
+                Task {
+                    @MainActor in
+
+                    await self?
+                        .refresh()
                 }
             }
     }
@@ -1179,6 +1456,7 @@ private final class PermissionGateController:
             kAXTrustedCheckOptionPrompt
                 .takeUnretainedValue()
             as String
+
         let options =
             [key: true]
             as CFDictionary
@@ -1188,12 +1466,16 @@ private final class PermissionGateController:
                 options
             )
 
-        DispatchQueue.main
+        DispatchQueue
+            .main
             .asyncAfter(
                 deadline:
                     .now()
                     + 0.45
-            ) { [weak self] in
+            ) {
+                [weak self]
+                in
+
                 guard
                     let self
                 else {
@@ -1201,22 +1483,24 @@ private final class PermissionGateController:
                 }
 
                 if !AXIsProcessTrusted() {
-                    self.openPrivacyPane(
-                        "Privacy_Accessibility"
-                    )
+                    self
+                        .openPrivacyPane(
+                            "Privacy_Accessibility"
+                        )
                 }
 
-                Task { @MainActor in
-                    await self.refresh(
-                        forceScreenProbe:
-                            false
-                    )
+                Task {
+                    @MainActor in
+
+                    await self
+                        .refresh()
                 }
             }
     }
 
     private func openPrivacyPane(
-        _ anchor: String
+        _ anchor:
+            String
     ) {
         guard
             let url =
@@ -1230,14 +1514,18 @@ private final class PermissionGateController:
             return
         }
 
-        NSWorkspace.shared.open(
-            url
-        )
+        NSWorkspace.shared
+            .open(
+                url
+            )
     }
 
     @objc
     private func quitApp() {
-        NSApp.terminate(nil)
+        NSApp
+            .terminate(
+                nil
+            )
     }
 }
 
@@ -1248,16 +1536,19 @@ final class AppDelegate:
 
     private var statusItem:
         NSStatusItem!
+
     private var menu:
         NSMenu!
 
     private var tickTimer:
         Timer?
-    private var captureTask:
+
+    private var preparationTask:
         Task<Void, Never>?
 
     private var session:
         FadeSession?
+
     private var permissionGate:
         PermissionGateController?
 
@@ -1266,30 +1557,38 @@ final class AppDelegate:
 
     private var screenPermission =
         false
+
     private var accessibilityPermission =
         false
 
-    private var enabled: Bool {
+    private var enabled:
+        Bool {
         get {
-            if UserDefaults.standard
+            if UserDefaults
+                .standard
                 .object(
-                    forKey: "enabled"
+                    forKey:
+                        "enabled"
                 ) == nil {
                 return true
             }
 
             return
-                UserDefaults.standard
+                UserDefaults
+                    .standard
                     .bool(
-                        forKey: "enabled"
+                        forKey:
+                            "enabled"
                     )
         }
 
         set {
-            UserDefaults.standard
+            UserDefaults
+                .standard
                 .set(
                     newValue,
-                    forKey: "enabled"
+                    forKey:
+                        "enabled"
                 )
 
             if !newValue {
@@ -1304,7 +1603,8 @@ final class AppDelegate:
         Double {
         get {
             let value =
-                UserDefaults.standard
+                UserDefaults
+                    .standard
                     .double(
                         forKey:
                             "idleSeconds"
@@ -1317,12 +1617,14 @@ final class AppDelegate:
         }
 
         set {
-            UserDefaults.standard
+            UserDefaults
+                .standard
                 .set(
                     newValue,
                     forKey:
                         "idleSeconds"
                 )
+
             rebuildMenu()
         }
     }
@@ -1331,7 +1633,8 @@ final class AppDelegate:
         Double {
         get {
             let value =
-                UserDefaults.standard
+                UserDefaults
+                    .standard
                     .double(
                         forKey:
                             "fadeSeconds"
@@ -1344,18 +1647,21 @@ final class AppDelegate:
         }
 
         set {
-            UserDefaults.standard
+            UserDefaults
+                .standard
                 .set(
                     newValue,
                     forKey:
                         "fadeSeconds"
                 )
+
             rebuildMenu()
         }
     }
 
     private let restingOpacity =
         0.10
+
     private let inhaleSeconds =
         0.72
 
@@ -1365,6 +1671,7 @@ final class AppDelegate:
     ) {
         screenPermission =
             false
+
         accessibilityPermission =
             false
 
@@ -1375,9 +1682,15 @@ final class AppDelegate:
         _ notification:
             Notification
     ) {
-        tickTimer?.invalidate()
-        captureTask?.cancel()
-        permissionGate?.stop()
+        tickTimer?
+            .invalidate()
+
+        preparationTask?
+            .cancel()
+
+        permissionGate?
+            .stop()
+
         breatheInImmediately()
     }
 
@@ -1388,88 +1701,112 @@ final class AppDelegate:
             return
         }
 
-        captureTask?.cancel()
-        captureTask = nil
+        preparationTask?
+            .cancel()
+
+        preparationTask =
+            nil
 
         breatheInImmediately()
 
-        tickTimer?.invalidate()
-        tickTimer = nil
+        tickTimer?
+            .invalidate()
+
+        tickTimer =
+            nil
 
         if let statusItem {
-            NSStatusBar.system
+            NSStatusBar
+                .system
                 .removeStatusItem(
                     statusItem
                 )
+
             self.statusItem =
                 nil
         }
 
-        mainStarted = false
-        NSApp.setActivationPolicy(
-            .regular
-        )
+        mainStarted =
+            false
+
+        NSApp
+            .setActivationPolicy(
+                .regular
+            )
 
         let gate =
             PermissionGateController()
 
         gate.onReady = {
-            [weak self, weak gate]
+            [weak self,
+             weak gate]
             screenVerified,
             accessibilityVerified
             in
 
-            Task { @MainActor in
+            Task {
+                @MainActor in
+
                 guard
                     let self
                 else {
                     return
                 }
 
-                gate?.stop()
+                gate?
+                    .stop()
 
-                if self.permissionGate
+                if self
+                    .permissionGate
                     === gate {
-                    self.permissionGate =
-                        nil
+                    self
+                        .permissionGate =
+                            nil
                 }
 
-                self.enterMainMode(
-                    screenVerified:
-                        screenVerified,
-                    accessibilityVerified:
-                        accessibilityVerified
-                )
+                self
+                    .enterMainMode(
+                        screenVerified:
+                            screenVerified,
+                        accessibilityVerified:
+                            accessibilityVerified
+                    )
             }
         }
 
         permissionGate =
             gate
 
-        gate.showWindow(nil)
-        gate.window?
+        gate
+            .showWindow(
+                nil
+            )
+
+        gate
+            .window?
             .makeKeyAndOrderFront(
                 nil
             )
 
         _ =
-            NSRunningApplication.current
+            NSRunningApplication
+                .current
                 .activate(
                     options: []
                 )
     }
 
     private func enterMainMode(
-        screenVerified: Bool,
-        accessibilityVerified: Bool
+        screenVerified:
+            Bool,
+        accessibilityVerified:
+            Bool
     ) {
         screenPermission =
             screenVerified
-            || CGPreflightScreenCaptureAccess()
 
         accessibilityPermission =
             accessibilityVerified
-            || AXIsProcessTrusted()
 
         guard
             screenPermission,
@@ -1479,12 +1816,16 @@ final class AppDelegate:
             return
         }
 
-        permissionGate?.stop()
-        permissionGate = nil
+        permissionGate?
+            .stop()
 
-        NSApp.setActivationPolicy(
-            .accessory
-        )
+        permissionGate =
+            nil
+
+        NSApp
+            .setActivationPolicy(
+                .accessory
+            )
 
         if statusItem == nil {
             buildStatusItem()
@@ -1492,26 +1833,35 @@ final class AppDelegate:
 
         if tickTimer == nil {
             tickTimer =
-                Timer.scheduledTimer(
-                    withTimeInterval:
-                        0.12,
-                    repeats: true
-                ) {
-                    [weak self] _ in
+                Timer
+                    .scheduledTimer(
+                        withTimeInterval:
+                            0.12,
+                        repeats:
+                            true
+                    ) {
+                        [weak self]
+                        _ in
 
-                    Task { @MainActor in
-                        self?.tick()
+                        Task {
+                            @MainActor in
+
+                            self?
+                                .tick()
+                        }
                     }
-                }
         }
 
-        mainStarted = true
+        mainStarted =
+            true
+
         rebuildMenu()
     }
 
     private func buildStatusItem() {
         statusItem =
-            NSStatusBar.system
+            NSStatusBar
+                .system
                 .statusItem(
                     withLength:
                         NSStatusItem
@@ -1519,7 +1869,8 @@ final class AppDelegate:
                 )
 
         if let button =
-            statusItem.button {
+            statusItem
+                .button {
             let image =
                 NSImage(
                     systemSymbolName:
@@ -1528,11 +1879,13 @@ final class AppDelegate:
                         "Asympta Breathe"
                 )
 
-            image?.isTemplate =
-                true
+            image?
+                .isTemplate =
+                    true
 
             button.image =
                 image
+
             button.toolTip =
                 "Asympta Breathe"
         }
@@ -1541,38 +1894,23 @@ final class AppDelegate:
     }
 
     private func refreshPermissions() {
-        let preflightScreen =
+        let screen =
             CGPreflightScreenCaptureAccess()
-        let newAccessibility =
+
+        let accessibility =
             AXIsProcessTrusted()
 
-        let oldScreen =
-            screenPermission
-        let oldAccessibility =
-            accessibilityPermission
-
-        if preflightScreen {
+        if screen {
             screenPermission =
                 true
         }
 
         accessibilityPermission =
-            newAccessibility
+            accessibility
 
         if mainStarted
             && !accessibilityPermission {
             showPermissionGate()
-            return
-        }
-
-        if (
-            oldScreen
-                != screenPermission
-            || oldAccessibility
-                != accessibilityPermission
-        )
-            && statusItem != nil {
-            rebuildMenu()
         }
     }
 
@@ -1583,37 +1921,49 @@ final class AppDelegate:
             return
         }
 
-        let menu = NSMenu()
+        let menu =
+            NSMenu()
 
         let title =
             NSMenuItem(
                 title:
                     "Asympta Breathe",
-                action: nil,
-                keyEquivalent: ""
+                action:
+                    nil,
+                keyEquivalent:
+                    ""
             )
+
         title.isEnabled =
             false
+
         menu.addItem(
             title
         )
 
         let version =
-            Bundle.main.object(
-                forInfoDictionaryKey:
-                    "CFBundleShortVersionString"
-            ) as? String
+            Bundle
+                .main
+                .object(
+                    forInfoDictionaryKey:
+                        "CFBundleShortVersionString"
+                )
+            as? String
             ?? "—"
 
         let versionItem =
             NSMenuItem(
                 title:
                     "Version \(version)",
-                action: nil,
-                keyEquivalent: ""
+                action:
+                    nil,
+                keyEquivalent:
+                    ""
             )
+
         versionItem.isEnabled =
             false
+
         menu.addItem(
             versionItem
         )
@@ -1635,8 +1985,8 @@ final class AppDelegate:
 
             statusText =
                 remaining == 1
-                ? "1 app resting at 10% · click it to return"
-                : "\(remaining) apps resting at 10% · click one to return"
+                ? "1 app resting · click it to return"
+                : "\(remaining) apps resting · click one to return"
         } else {
             let count =
                 collectVisibleWindows()
@@ -1652,11 +2002,15 @@ final class AppDelegate:
             NSMenuItem(
                 title:
                     statusText,
-                action: nil,
-                keyEquivalent: ""
+                action:
+                    nil,
+                keyEquivalent:
+                    ""
             )
+
         status.isEnabled =
             false
+
         menu.addItem(
             status
         )
@@ -1667,19 +2021,24 @@ final class AppDelegate:
 
         let enabledItem =
             NSMenuItem(
-                title: "Enabled",
+                title:
+                    "Enabled",
                 action:
                     #selector(
                         toggleEnabled
                     ),
-                keyEquivalent: ""
+                keyEquivalent:
+                    ""
             )
+
         enabledItem.target =
             self
+
         enabledItem.state =
             enabled
             ? .on
             : .off
+
         menu.addItem(
             enabledItem
         )
@@ -1692,15 +2051,18 @@ final class AppDelegate:
                     #selector(
                         breatheNow
                     ),
-                keyEquivalent: ""
+                keyEquivalent:
+                    ""
             )
+
         breathe.target =
             self
+
         breathe.isEnabled =
             screenPermission
             && accessibilityPermission
             && session == nil
-            && captureTask == nil
+            && preparationTask == nil
             && !collectVisibleWindows()
                 .isEmpty
 
@@ -1717,10 +2079,13 @@ final class AppDelegate:
                         #selector(
                             breatheInNow
                         ),
-                    keyEquivalent: ""
+                    keyEquivalent:
+                        ""
                 )
+
             restore.target =
                 self
+
             menu.addItem(
                 restore
             )
@@ -1777,17 +2142,21 @@ final class AppDelegate:
         let resting =
             NSMenuItem(
                 title:
-                    "Resting opacity: 10%",
-                action: nil,
-                keyEquivalent: ""
+                    "Resting content: 10%",
+                action:
+                    nil,
+                keyEquivalent:
+                    ""
             )
+
         resting.isEnabled =
             false
+
         menu.addItem(
             resting
         )
 
-        let resetPermissions =
+        let reset =
             NSMenuItem(
                 title:
                     "Reset & Re-Approve Permissions…",
@@ -1795,13 +2164,15 @@ final class AppDelegate:
                     #selector(
                         resetPermissionsFromMenu
                     ),
-                keyEquivalent: ""
+                keyEquivalent:
+                    ""
             )
-        resetPermissions.target =
+
+        reset.target =
             self
 
         menu.addItem(
-            resetPermissions
+            reset
         )
 
         menu.addItem(
@@ -1812,11 +2183,15 @@ final class AppDelegate:
             NSMenuItem(
                 title:
                     "Before fade: mouse, scroll and typing count as active",
-                action: nil,
-                keyEquivalent: ""
+                action:
+                    nil,
+                keyEquivalent:
+                    ""
             )
+
         activityHint.isEnabled =
             false
+
         menu.addItem(
             activityHint
         )
@@ -1824,12 +2199,16 @@ final class AppDelegate:
         let wakeHint =
             NSMenuItem(
                 title:
-                    "After fade: only a click restores that specific app",
-                action: nil,
-                keyEquivalent: ""
+                    "After fade: only clicking a faded app restores that app",
+                action:
+                    nil,
+                keyEquivalent:
+                    ""
             )
+
         wakeHint.isEnabled =
             false
+
         menu.addItem(
             wakeHint
         )
@@ -1837,12 +2216,16 @@ final class AppDelegate:
         let typingHint =
             NSMenuItem(
                 title:
-                    "Typing may continue in the app that was active when fading began",
-                action: nil,
-                keyEquivalent: ""
+                    "Focused typing remains live and fully visible while resting",
+                action:
+                    nil,
+                keyEquivalent:
+                    ""
             )
+
         typingHint.isEnabled =
             false
+
         menu.addItem(
             typingHint
         )
@@ -1858,29 +2241,39 @@ final class AppDelegate:
                 keyEquivalent:
                     "q"
             )
+
         quit.target =
             self
+
         menu.addItem(
             quit
         )
 
-        self.menu = menu
+        self.menu =
+            menu
+
         statusItem.menu =
             menu
     }
 
     private func makeValueMenu(
-        title: String,
-        current: Double,
-        values: [Double],
-        selector: Selector
+        title:
+            String,
+        current:
+            Double,
+        values:
+            [Double],
+        selector:
+            Selector
     ) -> NSMenuItem {
         let parent =
             NSMenuItem(
                 title:
                     "\(title): \(Int(current))s",
-                action: nil,
-                keyEquivalent: ""
+                action:
+                    nil,
+                keyEquivalent:
+                    ""
             )
 
         let submenu =
@@ -1893,12 +2286,17 @@ final class AppDelegate:
                         "\(Int(value)) seconds",
                     action:
                         selector,
-                    keyEquivalent: ""
+                    keyEquivalent:
+                        ""
                 )
+
             item.target =
                 self
-            item.representedObject =
-                value
+
+            item
+                .representedObject =
+                    value
+
             item.state =
                 abs(
                     value
@@ -1914,6 +2312,7 @@ final class AppDelegate:
 
         parent.submenu =
             submenu
+
         return parent
     }
 
@@ -1934,7 +2333,7 @@ final class AppDelegate:
         }
 
         guard
-            captureTask == nil
+            preparationTask == nil
         else {
             return
         }
@@ -1943,7 +2342,8 @@ final class AppDelegate:
             secondsSinceRelevantInput()
 
         guard
-            idle >= idleSeconds
+            idle
+            >= idleSeconds
         else {
             return
         }
@@ -1952,32 +2352,33 @@ final class AppDelegate:
             collectVisibleWindows()
 
         guard
-            !targets.isEmpty
+            !targets
+                .isEmpty
         else {
             return
         }
 
         startBreatheOut(
-            targets: targets
+            targets:
+                targets
         )
     }
 
     private func secondsSinceRelevantInput()
         -> Double {
-        let types: [
-            CGEventType
-        ] = [
-            .mouseMoved,
-            .leftMouseDragged,
-            .rightMouseDragged,
-            .otherMouseDragged,
-            .leftMouseDown,
-            .rightMouseDown,
-            .otherMouseDown,
-            .scrollWheel,
-            .keyDown,
-            .flagsChanged
-        ]
+        let types:
+            [CGEventType] = [
+                .mouseMoved,
+                .leftMouseDragged,
+                .rightMouseDragged,
+                .otherMouseDragged,
+                .leftMouseDown,
+                .rightMouseDown,
+                .otherMouseDown,
+                .scrollWheel,
+                .keyDown,
+                .flagsChanged
+            ]
 
         return
             types
@@ -1985,7 +2386,8 @@ final class AppDelegate:
                     CGEventSource
                         .secondsSinceLastEventType(
                             .combinedSessionState,
-                            eventType: $0
+                            eventType:
+                                $0
                         )
                 }
                 .min()
@@ -2001,7 +2403,7 @@ final class AppDelegate:
     private func breatheNow() {
         guard
             session == nil,
-            captureTask == nil
+            preparationTask == nil
         else {
             return
         }
@@ -2010,13 +2412,15 @@ final class AppDelegate:
             collectVisibleWindows()
 
         guard
-            !targets.isEmpty
+            !targets
+                .isEmpty
         else {
             return
         }
 
         startBreatheOut(
-            targets: targets
+            targets:
+                targets
         )
     }
 
@@ -2027,10 +2431,12 @@ final class AppDelegate:
 
     @objc
     private func setIdleDelay(
-        _ sender: NSMenuItem
+        _ sender:
+            NSMenuItem
     ) {
         if let value =
-            sender.representedObject
+            sender
+                .representedObject
             as? Double {
             idleSeconds =
                 value
@@ -2039,10 +2445,12 @@ final class AppDelegate:
 
     @objc
     private func setFadeDuration(
-        _ sender: NSMenuItem
+        _ sender:
+            NSMenuItem
     ) {
         if let value =
-            sender.representedObject
+            sender
+                .representedObject
             as? Double {
             fadeSeconds =
                 value
@@ -2053,21 +2461,28 @@ final class AppDelegate:
     private func resetPermissionsFromMenu() {
         let alert =
             NSAlert()
+
         alert.messageText =
             "Reset permissions?"
-        alert.informativeText =
-            "This removes Asympta Breathe's current Screen Recording and "
-            + "Accessibility approvals, then returns to permission setup."
+
+        alert
+            .informativeText =
+                "This removes Asympta Breathe's current Screen Recording and Accessibility approvals, then returns to permission setup."
+
         alert.alertStyle =
             .warning
-        alert.addButton(
-            withTitle:
-                "Reset & Re-Approve"
-        )
-        alert.addButton(
-            withTitle:
-                "Cancel"
-        )
+
+        alert
+            .addButton(
+                withTitle:
+                    "Reset & Re-Approve"
+            )
+
+        alert
+            .addButton(
+                withTitle:
+                    "Cancel"
+            )
 
         guard
             alert.runModal()
@@ -2076,8 +2491,12 @@ final class AppDelegate:
             return
         }
 
-        captureTask?.cancel()
-        captureTask = nil
+        preparationTask?
+            .cancel()
+
+        preparationTask =
+            nil
+
         breatheInImmediately()
 
         _ =
@@ -2085,8 +2504,10 @@ final class AppDelegate:
 
         screenPermission =
             false
+
         accessibilityPermission =
             false
+
         mainStarted =
             false
 
@@ -2095,7 +2516,10 @@ final class AppDelegate:
 
     @objc
     private func quitApp() {
-        NSApp.terminate(nil)
+        NSApp
+            .terminate(
+                nil
+            )
     }
 
     private func startBreatheOut(
@@ -2104,18 +2528,16 @@ final class AppDelegate:
     ) {
         guard
             session == nil,
-            captureTask == nil
+            preparationTask == nil
         else {
             return
         }
 
-        let frontmostPID =
-            NSWorkspace.shared
-                .frontmostApplication?
-                .processIdentifier
+        preparationTask =
+            Task {
+                [weak self]
+                in
 
-        captureTask =
-            Task { [weak self] in
                 guard
                     let self
                 else {
@@ -2132,10 +2554,11 @@ final class AppDelegate:
                                         true
                                 )
 
-                    let shareableByID =
+                    let scWindowByID =
                         Dictionary(
                             uniqueKeysWithValues:
-                                shareable.windows
+                                shareable
+                                    .windows
                                     .map {
                                         (
                                             $0.windowID,
@@ -2144,143 +2567,404 @@ final class AppDelegate:
                                     }
                         )
 
-                    var captured:
-                        [CapturedWindow] =
+                    let matched:
+                        [
+                            (
+                                VisibleWindowTarget,
+                                SCWindow
+                            )
+                        ] =
+                            targets.compactMap {
+                                target in
+
+                                guard
+                                    let window =
+                                        scWindowByID[
+                                            target
+                                                .window
+                                                .windowID
+                                        ]
+                                else {
+                                    return nil
+                                }
+
+                                return (
+                                    target,
+                                    window
+                                )
+                            }
+
+                    let excludedWindows =
+                        matched.map {
+                            $0.1
+                        }
+
+                    var prepared:
+                        [PreparedOverlay] =
                             []
 
-                    for target in targets {
+                    for (
+                        target,
+                        scWindow
+                    ) in matched {
                         guard
-                            let scWindow =
-                                shareableByID[
-                                    target
-                                        .window
-                                        .windowID
-                                ]
+                            let display =
+                                self
+                                    .display(
+                                        for:
+                                            target
+                                                .window
+                                                .cgFrame,
+                                        from:
+                                            shareable
+                                                .displays
+                                    )
                         else {
                             continue
                         }
 
-                        let filter =
-                            SCContentFilter(
-                                desktopIndependentWindow:
-                                    scWindow
-                            )
-
-                        let config =
-                            SCStreamConfiguration()
-
-                        let scale =
-                            self.backingScale(
-                                for:
-                                    target
-                                        .window
-                                        .appKitFrame
-                            )
-
-                        config.width =
-                            max(
-                                1,
-                                Int(
-                                    target
-                                        .window
-                                        .cgFrame
-                                        .width
-                                    * scale
-                                )
-                            )
-
-                        config.height =
-                            max(
-                                1,
-                                Int(
-                                    target
-                                        .window
-                                        .cgFrame
-                                        .height
-                                    * scale
-                                )
-                            )
-
-                        config.showsCursor =
-                            false
-                        config.queueDepth =
-                            1
-                        config.shouldBeOpaque =
-                            false
-
-                        // This fixes the Safari edge strip / side-bar artifact:
-                        // the captured image dimensions now match CGWindow frame
-                        // instead of including an extra native shadow.
-                        config.ignoreShadowsSingleWindow =
-                            true
-
-                        let image =
-                            try await
-                                SCScreenshotManager
-                                    .captureImage(
-                                        contentFilter:
-                                            filter,
-                                        configuration:
-                                            config
+                        guard
+                            let background =
+                                try await self
+                                    .captureBackgroundPatch(
+                                        target:
+                                            target,
+                                        display:
+                                            display,
+                                        excluding:
+                                            excludedWindows
                                     )
+                        else {
+                            continue
+                        }
 
-                        captured.append(
-                            CapturedWindow(
+                        let border =
+                            try? await self
+                                .captureBorderImage(
+                                    target:
+                                        target,
+                                    scWindow:
+                                        scWindow
+                                )
+
+                        prepared.append(
+                            PreparedOverlay(
                                 target:
                                     target,
-                                scWindow:
-                                    scWindow,
-                                image:
-                                    image,
-                                scale:
-                                    scale
+                                backgroundImage:
+                                    background,
+                                borderImage:
+                                    border
                             )
                         )
                     }
 
-                    if Task.isCancelled {
-                        self.captureTask =
-                            nil
+                    if Task
+                        .isCancelled {
+                        self
+                            .preparationTask =
+                                nil
                         return
                     }
+
+                    self
+                        .preparationTask =
+                            nil
 
                     guard
-                        !captured.isEmpty
+                        !prepared
+                            .isEmpty
                     else {
-                        self.captureTask =
-                            nil
                         return
                     }
 
-                    self.captureTask =
-                        nil
-
-                    self.presentBreatheOut(
-                        captured:
-                            captured,
-                        typingPID:
-                            frontmostPID
-                    )
+                    self
+                        .presentBreatheOut(
+                            prepared:
+                                prepared
+                        )
                 } catch {
-                    self.captureTask =
-                        nil
+                    self
+                        .preparationTask =
+                            nil
 
                     if !CGPreflightScreenCaptureAccess() {
-                        self.screenPermission =
-                            false
-                        self.showPermissionGate()
-                    } else {
-                        self.rebuildMenu()
+                        self
+                            .screenPermission =
+                                false
+
+                        self
+                            .showPermissionGate()
                     }
                 }
             }
     }
 
+    private func display(
+        for windowFrame:
+            CGRect,
+        from displays:
+            [SCDisplay]
+    ) -> SCDisplay? {
+        let center =
+            CGPoint(
+                x:
+                    windowFrame
+                        .midX,
+                y:
+                    windowFrame
+                        .midY
+            )
+
+        if let containing =
+            displays
+                .first(
+                    where: {
+                        $0
+                            .frame
+                            .contains(
+                                center
+                            )
+                    }
+                ) {
+            return containing
+        }
+
+        return
+            displays
+                .max(
+                    by: {
+                        lhs,
+                        rhs in
+
+                        lhs.frame
+                            .intersection(
+                                windowFrame
+                            )
+                            .width
+                            * lhs.frame
+                                .intersection(
+                                    windowFrame
+                                )
+                                .height
+
+                        <
+
+                        rhs.frame
+                            .intersection(
+                                windowFrame
+                            )
+                            .width
+                            * rhs.frame
+                                .intersection(
+                                    windowFrame
+                                )
+                                .height
+                    }
+                )
+    }
+
+    private func captureBackgroundPatch(
+        target:
+            VisibleWindowTarget,
+        display:
+            SCDisplay,
+        excluding:
+            [SCWindow]
+    ) async throws
+        -> CGImage? {
+        let frame =
+            target
+                .window
+                .cgFrame
+
+        let intersection =
+            frame
+                .intersection(
+                    display
+                        .frame
+                )
+
+        guard
+            !intersection
+                .isNull,
+            intersection.width
+                >= frame.width
+                - 1,
+            intersection.height
+                >= frame.height
+                - 1
+        else {
+            // Avoid stretching a clipped image over a window spanning displays.
+            return nil
+        }
+
+        let localRect =
+            CGRect(
+                x:
+                    frame.minX
+                    - display
+                        .frame
+                        .minX,
+                y:
+                    frame.minY
+                    - display
+                        .frame
+                        .minY,
+                width:
+                    frame.width,
+                height:
+                    frame.height
+            )
+
+        let scale =
+            backingScale(
+                for:
+                    target
+                        .window
+                        .appKitFrame
+            )
+
+        let filter =
+            SCContentFilter(
+                display:
+                    display,
+                excludingWindows:
+                    excluding
+            )
+
+        let config =
+            SCStreamConfiguration()
+
+        config.sourceRect =
+            localRect
+
+        config.width =
+            max(
+                1,
+                Int(
+                    frame.width
+                    * scale
+                )
+            )
+
+        config.height =
+            max(
+                1,
+                Int(
+                    frame.height
+                    * scale
+                )
+            )
+
+        config.showsCursor =
+            false
+
+        config.queueDepth =
+            1
+
+        config.shouldBeOpaque =
+            true
+
+        config.ignoreShadowsDisplay =
+            true
+
+        return
+            try await
+                SCScreenshotManager
+                    .captureImage(
+                        contentFilter:
+                            filter,
+                        configuration:
+                            config
+                    )
+    }
+
+    private func captureBorderImage(
+        target:
+            VisibleWindowTarget,
+        scWindow:
+            SCWindow
+    ) async throws
+        -> CGImage? {
+        let frame =
+            target
+                .window
+                .cgFrame
+
+        let scale =
+            backingScale(
+                for:
+                    target
+                        .window
+                        .appKitFrame
+            )
+
+        let filter =
+            SCContentFilter(
+                desktopIndependentWindow:
+                    scWindow
+            )
+
+        let config =
+            SCStreamConfiguration()
+
+        config.width =
+            max(
+                1,
+                Int(
+                    frame.width
+                    * scale
+                )
+            )
+
+        config.height =
+            max(
+                1,
+                Int(
+                    frame.height
+                    * scale
+                )
+            )
+
+        config.showsCursor =
+            false
+
+        config.queueDepth =
+            1
+
+        config.shouldBeOpaque =
+            false
+
+        config.ignoreShadowsSingleWindow =
+            true
+
+        let image =
+            try await
+                SCScreenshotManager
+                    .captureImage(
+                        contentFilter:
+                            filter,
+                        configuration:
+                            config
+                    )
+
+        return
+            makeAlphaEdgeImage(
+                from:
+                    image,
+                color:
+                    stableAppColor(
+                        bundleID:
+                            target
+                                .bundleID
+                    )
+            )
+    }
+
     private func presentBreatheOut(
-        captured:
-            [CapturedWindow],
-        typingPID:
-            pid_t?
+        prepared:
+            [PreparedOverlay]
     ) {
         guard
             session == nil
@@ -2288,14 +2972,11 @@ final class AppDelegate:
             return
         }
 
-        var panels:
-            [BreathPanel] =
-                []
-        var views:
-            [BreathOverlayView] =
+        var overlays:
+            [WindowOverlay] =
                 []
 
-        for item in captured {
+        for item in prepared {
             let panel =
                 BreathPanel(
                     contentRect:
@@ -2315,26 +2996,34 @@ final class AppDelegate:
 
             panel.isOpaque =
                 false
+
             panel.backgroundColor =
                 .clear
+
             panel.hasShadow =
                 false
+
             panel.alphaValue =
                 1
+
+            // Critical: all real mouse interaction continues to the actual app.
             panel.ignoresMouseEvents =
-                false
+                true
+
             panel.level =
                 .screenSaver
+
             panel.collectionBehavior = [
                 .canJoinAllSpaces,
                 .fullScreenAuxiliary,
                 .stationary,
                 .ignoresCycle
             ]
+
             panel.animationBehavior =
                 .none
 
-            let overlay =
+            let view =
                 BreathOverlayView(
                     frame:
                         NSRect(
@@ -2349,409 +3038,321 @@ final class AppDelegate:
                         )
                 )
 
-            overlay.install(
-                image:
-                    item.image,
-                borderColor:
-                    stableAppColor(
-                        bundleID:
-                            item
-                                .target
-                                .bundleID
-                    )
+            view.install(
+                background:
+                    item
+                        .backgroundImage,
+                border:
+                    item
+                        .borderImage
             )
 
             panel.contentView =
-                overlay
+                view
 
-            panels.append(
-                panel
-            )
-            views.append(
-                overlay
+            overlays.append(
+                WindowOverlay(
+                    target:
+                        item
+                            .target,
+                    panel:
+                        panel,
+                    view:
+                        view
+                )
             )
         }
 
         let newSession =
             FadeSession(
-                captured:
-                    captured,
-                panels:
-                    panels,
-                views:
-                    views,
-                typingPID:
-                    typingPID
+                overlays:
+                    overlays
             )
-
-        for (
-            index,
-            view
-        ) in views.enumerated() {
-            let app =
-                captured[
-                    index
-                ]
-                .target
-                .app
-
-            view.onClick = {
-                [weak self,
-                 weak newSession,
-                 weak app]
-                in
-
-                Task { @MainActor in
-                    guard
-                        let self,
-                        let newSession,
-                        self.session
-                            === newSession
-                    else {
-                        return
-                    }
-
-                    self.breatheIn(
-                        pid:
-                            app?
-                                .processIdentifier,
-                        preferredApp:
-                            app
-                    )
-                }
-            }
-        }
 
         session =
             newSession
 
-        // CGWindow list is front-to-back.
-        // Reverse order preserves original visual stacking.
-        for panel in panels
-            .reversed() {
-            panel.orderFrontRegardless()
+        // Target list follows CGWindow front-to-back order.
+        // Put back windows up first so our overlay z-order matches.
+        for overlay
+            in overlays
+                .reversed() {
+            overlay
+                .panel
+                .orderFrontRegardless()
         }
 
-        DispatchQueue.main
-            .asyncAfter(
-                deadline:
-                    .now()
-                    + 0.055
-            ) {
-                [weak self,
-                 weak newSession]
-                in
+        installClickMonitor(
+            session:
+                newSession
+        )
 
-                guard
-                    let self,
-                    let newSession,
-                    self.session
-                        === newSession
-                else {
-                    return
-                }
+        startFocusTracking(
+            session:
+                newSession
+        )
 
-                let displacements =
-                    self
-                        .displaceOriginalWindows(
-                            captured:
-                                captured
-                        )
+        let coverAlpha =
+            1
+            - restingOpacity
 
-                guard
-                    !displacements
-                        .isEmpty
-                else {
-                    self
-                        .closeSessionWithoutRestoring(
-                            newSession
-                        )
-                    self.rebuildMenu()
-                    return
-                }
+        NSAnimationContext
+            .runAnimationGroup {
+                context in
 
-                newSession.displacements =
-                    displacements
+                context.duration =
+                    fadeSeconds
 
-                NSAnimationContext
-                    .runAnimationGroup {
-                        context in
+                context.timingFunction =
+                    CAMediaTimingFunction(
+                        controlPoints:
+                            0.37,
+                        0,
+                        0.63,
+                        1
+                    )
 
-                        context.duration =
-                            self.fadeSeconds
-                        context.timingFunction =
-                            CAMediaTimingFunction(
-                                controlPoints:
-                                    0.37,
-                                0.0,
-                                0.63,
-                                1.0
+                context
+                    .allowsImplicitAnimation =
+                        true
+
+                for overlay
+                    in overlays {
+                    overlay
+                        .view
+                        .coverImageView
+                        .animator()
+                        .alphaValue =
+                            CGFloat(
+                                coverAlpha
                             )
-                        context
-                            .allowsImplicitAnimation =
-                                true
 
-                        for view
-                            in views {
-                            view
-                                .baseImageView
-                                .animator()
-                                .alphaValue =
-                                    CGFloat(
-                                        self
-                                            .restingOpacity
-                                    )
-                        }
-                    } completionHandler: {
-                        [weak self,
-                         weak newSession]
-                        in
-
-                        Task { @MainActor in
-                            guard
-                                let self,
-                                let newSession,
-                                self.session
-                                    === newSession
-                            else {
-                                return
-                            }
-
-                            self
-                                .startTypingRefresh(
-                                    session:
-                                        newSession
-                                )
-
-                            self
-                                .rebuildMenu()
-                        }
-                    }
+                    overlay
+                        .view
+                        .borderImageView
+                        .animator()
+                        .alphaValue =
+                            0.72
+                }
             }
 
         rebuildMenu()
     }
 
-    private func startTypingRefresh(
+    private func installClickMonitor(
         session:
             FadeSession
     ) {
-        session.stopTypingTimer()
+        session.clickMonitor =
+            NSEvent
+                .addGlobalMonitorForEvents(
+                    matching: [
+                        .leftMouseDown,
+                        .rightMouseDown,
+                        .otherMouseDown
+                    ]
+                ) {
+                    [weak self,
+                     weak session]
+                    _ in
 
-        guard
-            let pid =
-                session.typingPID,
-            session
-                .remainingPIDs
-                .contains(pid)
-        else {
-            return
-        }
+                    Task {
+                        @MainActor in
 
-        session.typingTimer =
-            Timer.scheduledTimer(
-                withTimeInterval:
-                    0.085,
-                repeats:
-                    true
-            ) {
-                [weak self,
-                 weak session]
-                _ in
+                        guard
+                            let self,
+                            let session,
+                            self
+                                .session
+                                === session
+                        else {
+                            return
+                        }
 
-                Task { @MainActor in
-                    guard
-                        let self,
-                        let session,
-                        self.session
-                            === session,
-                        session
-                            .remainingPIDs
-                            .contains(pid)
-                    else {
-                        return
+                        let point =
+                            NSEvent
+                                .mouseLocation
+
+                        guard
+                            let overlay =
+                                session
+                                    .overlays
+                                    .first(
+                                        where: {
+                                            session
+                                                .remainingPIDs
+                                                .contains(
+                                                    $0
+                                                        .target
+                                                        .app
+                                                        .processIdentifier
+                                                )
+                                            && $0
+                                                .panel
+                                                .frame
+                                                .contains(
+                                                    point
+                                                )
+                                        }
+                                    )
+                        else {
+                            return
+                        }
+
+                        self
+                            .breatheIn(
+                                pid:
+                                    overlay
+                                        .target
+                                        .app
+                                        .processIdentifier
+                            )
                     }
-
-                    await self
-                        .refreshTypingVisual(
-                            session:
-                                session,
-                            pid:
-                                pid
-                        )
                 }
-            }
     }
 
-    private func refreshTypingVisual(
+    private func startFocusTracking(
         session:
-            FadeSession,
-        pid:
-            pid_t
-    ) async {
+            FadeSession
+    ) {
+        updateFocusHoles(
+            session:
+                session
+        )
+
+        session.focusTimer =
+            Timer
+                .scheduledTimer(
+                    withTimeInterval:
+                        0.12,
+                    repeats:
+                        true
+                ) {
+                    [weak self,
+                     weak session]
+                    _ in
+
+                    Task {
+                        @MainActor in
+
+                        guard
+                            let self,
+                            let session,
+                            self
+                                .session
+                                === session
+                        else {
+                            return
+                        }
+
+                        self
+                            .updateFocusHoles(
+                                session:
+                                    session
+                            )
+                    }
+                }
+    }
+
+    private func updateFocusHoles(
+        session:
+            FadeSession
+    ) {
         guard
-            !session
-                .typingRefreshInFlight
+            let active =
+                NSWorkspace
+                    .shared
+                    .frontmostApplication
         else {
+            for overlay
+                in session
+                    .overlays {
+                overlay
+                    .view
+                    .setFocusHole(
+                        nil
+                    )
+            }
+
             return
         }
 
-        session
-            .typingRefreshInFlight =
-                true
-
-        defer {
-            session
-                .typingRefreshInFlight =
-                    false
-        }
+        let activePID =
+            active
+                .processIdentifier
 
         guard
-            let focusedFrame =
-                focusedElementFrame(
+            session
+                .remainingPIDs
+                .contains(
+                    activePID
+                ),
+            let focused =
+                focusedEditableElementFrame(
                     for:
-                        pid
+                        activePID
                 )
         else {
-            for (
-                index,
-                item
-            ) in session
-                .captured
-                .enumerated()
-            where
-                item
+            for overlay
+                in session
+                    .overlays {
+                overlay
+                    .view
+                    .setFocusHole(
+                        nil
+                    )
+            }
+
+            return
+        }
+
+        for overlay
+            in session
+                .overlays {
+            let pid =
+                overlay
                     .target
                     .app
                     .processIdentifier
-                == pid {
-                session
-                    .views[index]
-                    .hideFocusedRegion()
-            }
-
-            return
-        }
-
-        guard
-            let index =
-                session
-                    .captured
-                    .firstIndex(
-                        where: {
-                            $0
-                                .target
-                                .app
-                                .processIdentifier
-                            == pid
-                            && $0
-                                .target
-                                .window
-                                .cgFrame
-                                .intersects(
-                                    focusedFrame
-                                )
-                        }
-                    )
-        else {
-            return
-        }
-
-        let item =
-            session
-                .captured[
-                    index
-                ]
-
-        let config =
-            SCStreamConfiguration()
-
-        config.width =
-            max(
-                1,
-                Int(
-                    item
-                        .target
-                        .window
-                        .cgFrame
-                        .width
-                    * item.scale
-                )
-            )
-
-        config.height =
-            max(
-                1,
-                Int(
-                    item
-                        .target
-                        .window
-                        .cgFrame
-                        .height
-                    * item.scale
-                )
-            )
-
-        config.showsCursor =
-            false
-        config.queueDepth =
-            1
-        config.shouldBeOpaque =
-            false
-        config.ignoreShadowsSingleWindow =
-            true
-
-        do {
-            let filter =
-                SCContentFilter(
-                    desktopIndependentWindow:
-                        item.scWindow
-                )
-
-            let image =
-                try await
-                    SCScreenshotManager
-                        .captureImage(
-                            contentFilter:
-                                filter,
-                            configuration:
-                                config
-                        )
 
             guard
-                self.session
-                    === session,
-                session
-                    .remainingPIDs
-                    .contains(pid)
+                pid
+                == activePID
             else {
-                return
+                overlay
+                    .view
+                    .setFocusHole(
+                        nil
+                    )
+                continue
             }
 
-            let view =
-                session
-                    .views[
-                        index
-                    ]
-
-            // Keep the resting app live at 10%, so caret / text layout /
-            // animations continue rather than freezing at the original frame.
-            view.setBaseImage(
-                image
-            )
-
             let windowFrame =
-                item
+                overlay
                     .target
                     .window
                     .cgFrame
 
+            guard
+                windowFrame
+                    .intersects(
+                        focused
+                    )
+            else {
+                overlay
+                    .view
+                    .setFocusHole(
+                        nil
+                    )
+                continue
+            }
+
             let localX =
-                focusedFrame.minX
+                focused.minX
                 - windowFrame.minX
 
-            let localTopY =
-                focusedFrame.minY
+            let localTop =
+                focused.minY
                 - windowFrame.minY
 
             let localRect =
@@ -2760,30 +3361,46 @@ final class AppDelegate:
                         localX,
                     y:
                         windowFrame.height
-                        - localTopY
-                        - focusedFrame.height,
+                        - localTop
+                        - focused.height,
                     width:
-                        focusedFrame.width,
+                        focused.width,
                     height:
-                        focusedFrame.height
+                        focused.height
                 )
 
-            // The focused input stays fully awake: typed text, caret and
-            // native typing animation render at normal color while the rest
-            // of the app remains at 10%.
-            view.showFocusedRegion(
-                image:
-                    image,
-                localRect:
-                    localRect
-            )
-        } catch {
-            // Keep the existing faded representation if a live refresh frame
-            // fails; do not wake the app and do not make a sound.
+            // Reject an AX frame so large that it is probably the whole web area,
+            // not the actual editable control.
+            let windowArea =
+                max(
+                    1,
+                    windowFrame.width
+                    * windowFrame.height
+                )
+
+            let focusArea =
+                localRect.width
+                * localRect.height
+
+            if focusArea
+                > windowArea
+                    * 0.45 {
+                overlay
+                    .view
+                    .setFocusHole(
+                        nil
+                    )
+            } else {
+                overlay
+                    .view
+                    .setFocusHole(
+                        localRect
+                    )
+            }
         }
     }
 
-    private func focusedElementFrame(
+    private func focusedEditableElementFrame(
         for pid:
             pid_t
     ) -> CGRect? {
@@ -2805,7 +3422,8 @@ final class AppDelegate:
             let focusedRaw,
             CFGetTypeID(
                 focusedRaw
-            ) == AXUIElementGetTypeID()
+            )
+                == AXUIElementGetTypeID()
         else {
             return nil
         }
@@ -2814,6 +3432,42 @@ final class AppDelegate:
             focusedRaw
             as! AXUIElement
 
+        var roleRaw:
+            CFTypeRef?
+
+        guard
+            AXUIElementCopyAttributeValue(
+                focused,
+                kAXRoleAttribute
+                    as CFString,
+                &roleRaw
+            ) == .success,
+            let role =
+                roleRaw
+                as? String
+        else {
+            return nil
+        }
+
+        let editableRoles:
+            Set<String> = [
+                kAXTextFieldRole
+                    as String,
+                kAXTextAreaRole
+                    as String,
+                kAXComboBoxRole
+                    as String
+            ]
+
+        guard
+            editableRoles
+                .contains(
+                    role
+                )
+        else {
+            return nil
+        }
+
         guard
             let position =
                 axPoint(
@@ -2821,7 +3475,7 @@ final class AppDelegate:
                         focused,
                     attribute:
                         kAXPositionAttribute
-                        as CFString
+                            as CFString
                 ),
             let size =
                 axSize(
@@ -2829,56 +3483,51 @@ final class AppDelegate:
                         focused,
                     attribute:
                         kAXSizeAttribute
-                        as CFString
+                            as CFString
                 ),
-            size.width > 2,
-            size.height > 2
+            size.width
+                > 2,
+            size.height
+                > 2
         else {
             return nil
         }
 
-        return CGRect(
-            origin:
-                position,
-            size:
-                size
-        )
+        return
+            CGRect(
+                origin:
+                    position,
+                size:
+                    size
+            )
     }
 
     private func breatheIn(
         pid:
-            pid_t?,
-        preferredApp:
-            NSRunningApplication?
+            pid_t
     ) {
         guard
-            let pid,
             let current =
                 session,
             current
                 .remainingPIDs
-                .contains(pid),
+                .contains(
+                    pid
+                ),
             !current
                 .inhalingPIDs
-                .contains(pid)
+                .contains(
+                    pid
+                )
         else {
             return
         }
 
-        if current.typingPID
-            == pid {
-            current.stopTypingTimer()
-        }
-
-        let indices =
+        let overlays =
             current
-                .captured
-                .indices
+                .overlays
                 .filter {
-                    current
-                        .captured[
-                            $0
-                        ]
+                    $0
                         .target
                         .app
                         .processIdentifier
@@ -2886,22 +3535,17 @@ final class AppDelegate:
                 }
 
         guard
-            !indices.isEmpty
+            !overlays
+                .isEmpty
         else {
             return
         }
 
         current
             .inhalingPIDs
-            .insert(pid)
-
-        for index in indices {
-            current
-                .views[index]
-                .hideFocusedRegion()
-        }
-
-        rebuildMenu()
+            .insert(
+                pid
+            )
 
         NSAnimationContext
             .runAnimationGroup {
@@ -2910,129 +3554,92 @@ final class AppDelegate:
                 context.duration =
                     inhaleSeconds
 
-                context.timingFunction =
-                    CAMediaTimingFunction(
-                        controlPoints:
-                            0.22,
-                        1.0,
-                        0.36,
-                        1.0
-                    )
+                context
+                    .timingFunction =
+                        CAMediaTimingFunction(
+                            controlPoints:
+                                0.22,
+                            1,
+                            0.36,
+                            1
+                        )
 
                 context
                     .allowsImplicitAnimation =
                         true
 
-                for index
-                    in indices {
-                    current
-                        .views[
-                            index
-                        ]
-                        .baseImageView
+                for overlay
+                    in overlays {
+                    overlay
+                        .view
+                        .coverImageView
                         .animator()
                         .alphaValue =
-                            1
+                            0
+
+                    overlay
+                        .view
+                        .borderImageView
+                        .animator()
+                        .alphaValue =
+                            0
                 }
             } completionHandler: {
                 [weak self,
-                 weak current,
-                 weak preferredApp]
+                 weak current]
                 in
 
-                Task { @MainActor in
+                Task {
+                    @MainActor in
+
                     guard
                         let self,
                         let current,
-                        self.session
+                        self
+                            .session
                             === current
                     else {
                         return
                     }
 
-                    if let displacement =
-                        current
-                            .displacements
-                            .first(
-                                where: {
-                                    $0
-                                        .app
-                                        .processIdentifier
-                                    == pid
-                                }
-                            ) {
-                        self
-                            .restoreOriginalWindows(
-                                [
-                                    displacement
-                                ]
+                    for overlay
+                        in overlays {
+                        overlay
+                            .panel
+                            .orderOut(
+                                nil
                             )
+
+                        overlay
+                            .panel
+                            .close()
                     }
 
-                    if let preferredApp {
-                        _ =
-                            preferredApp
-                                .activate(
-                                    options:
-                                        []
-                                )
+                    current
+                        .inhalingPIDs
+                        .remove(
+                            pid
+                        )
+
+                    current
+                        .restoredPIDs
+                        .insert(
+                            pid
+                        )
+
+                    if current
+                        .remainingPIDs
+                        .isEmpty {
+                        current
+                            .cleanupMonitors()
+
+                        self
+                            .session =
+                                nil
                     }
 
-                    DispatchQueue.main
-                        .asyncAfter(
-                            deadline:
-                                .now()
-                                + 0.055
-                        ) {
-                            [weak self,
-                             weak current]
-                            in
-
-                            guard
-                                let self,
-                                let current,
-                                self.session
-                                    === current
-                            else {
-                                return
-                            }
-
-                            for index
-                                in indices {
-                                current
-                                    .panels[
-                                        index
-                                    ]
-                                    .orderOut(
-                                        nil
-                                    )
-                                current
-                                    .panels[
-                                        index
-                                    ]
-                                    .close()
-                            }
-
-                            current
-                                .inhalingPIDs
-                                .remove(pid)
-
-                            current
-                                .restoredPIDs
-                                .insert(pid)
-
-                            if current
-                                .remainingPIDs
-                                .isEmpty {
-                                current
-                                    .stopTypingTimer()
-                                self.session =
-                                    nil
-                            }
-
-                            self
-                                .rebuildMenu()
-                        }
+                    self
+                        .rebuildMenu()
                 }
             }
     }
@@ -3051,34 +3658,21 @@ final class AppDelegate:
                     .remainingPIDs
             )
 
-        for pid in pids {
-            let app =
-                current
-                    .captured
-                    .first(
-                        where: {
-                            $0
-                                .target
-                                .app
-                                .processIdentifier
-                            == pid
-                        }
-                    )?
-                    .target
-                    .app
-
+        for pid
+            in pids {
             breatheIn(
                 pid:
-                    pid,
-                preferredApp:
-                    app
+                    pid
             )
         }
     }
 
     private func breatheInImmediately() {
-        captureTask?.cancel()
-        captureTask = nil
+        preparationTask?
+            .cancel()
+
+        preparationTask =
+            nil
 
         guard
             let current =
@@ -3087,343 +3681,27 @@ final class AppDelegate:
             return
         }
 
-        current.stopTypingTimer()
+        current
+            .cleanupMonitors()
 
-        restoreOriginalWindows(
-            current
-                .displacements
-        )
+        for overlay
+            in current
+                .overlays {
+            overlay
+                .panel
+                .orderOut(
+                    nil
+                )
 
-        current.panels
-            .forEach {
-                $0.orderOut(nil)
-                $0.close()
-            }
+            overlay
+                .panel
+                .close()
+        }
 
-        session = nil
+        session =
+            nil
+
         rebuildMenu()
-    }
-
-    private func closeSessionWithoutRestoring(
-        _ current:
-            FadeSession
-    ) {
-        current.stopTypingTimer()
-
-        restoreOriginalWindows(
-            current
-                .displacements
-        )
-
-        current.panels
-            .forEach {
-                $0.orderOut(nil)
-                $0.close()
-            }
-
-        if session === current {
-            session = nil
-        }
-    }
-
-    private func displaceOriginalWindows(
-        captured:
-            [CapturedWindow]
-    ) -> [AppDisplacement] {
-        var windowsByPID:
-            [pid_t: [TargetWindow]] =
-                [:]
-
-        var appsByPID:
-            [pid_t:
-                NSRunningApplication] =
-                [:]
-
-        var pidOrder:
-            [pid_t] =
-                []
-
-        for item in captured {
-            let pid =
-                item
-                    .target
-                    .app
-                    .processIdentifier
-
-            if windowsByPID[
-                pid
-            ] == nil {
-                windowsByPID[
-                    pid
-                ] = []
-
-                appsByPID[
-                    pid
-                ] =
-                    item
-                        .target
-                        .app
-
-                pidOrder.append(
-                    pid
-                )
-            }
-
-            windowsByPID[
-                pid
-            ]?
-                .append(
-                    item
-                        .target
-                        .window
-                )
-        }
-
-        var results:
-            [AppDisplacement] =
-                []
-
-        for pid in pidOrder {
-            guard
-                let app =
-                    appsByPID[
-                        pid
-                    ],
-                let visibleWindows =
-                    windowsByPID[
-                        pid
-                    ]
-            else {
-                continue
-            }
-
-            let states =
-                collectAXWindowStates(
-                    for:
-                        pid,
-                    matching:
-                        visibleWindows
-                )
-
-            var movedCount =
-                0
-
-            for (
-                index,
-                state
-            ) in states
-                .enumerated() {
-                let destination =
-                    CGPoint(
-                        x:
-                            -12_000
-                            - CGFloat(
-                                index
-                                * 48
-                            ),
-                        y:
-                            state
-                                .originalPosition
-                                .y
-                    )
-
-                if setAXPoint(
-                    element:
-                        state.element,
-                    attribute:
-                        kAXPositionAttribute
-                        as CFString,
-                    value:
-                        destination
-                ) {
-                    movedCount +=
-                        1
-                }
-            }
-
-            let useHideFallback =
-                movedCount
-                < visibleWindows
-                    .count
-
-            if useHideFallback {
-                _ =
-                    app.hide()
-            }
-
-            results.append(
-                AppDisplacement(
-                    app:
-                        app,
-                    axWindows:
-                        states,
-                    hiddenFallback:
-                        useHideFallback
-                )
-            )
-        }
-
-        return results
-    }
-
-    private func restoreOriginalWindows(
-        _ displacements:
-            [AppDisplacement]
-    ) {
-        for displacement
-            in displacements {
-            for state
-                in displacement
-                    .axWindows {
-                _ =
-                    setAXPoint(
-                        element:
-                            state
-                                .element,
-                        attribute:
-                            kAXPositionAttribute
-                            as CFString,
-                        value:
-                            state
-                                .originalPosition
-                    )
-            }
-
-            if displacement
-                .hiddenFallback {
-                _ =
-                    displacement
-                        .app
-                        .unhide()
-            }
-        }
-    }
-
-    private func collectAXWindowStates(
-        for pid:
-            pid_t,
-        matching visibleWindows:
-            [TargetWindow]
-    ) -> [AXWindowState] {
-        let appElement =
-            AXUIElementCreateApplication(
-                pid
-            )
-
-        var rawWindows:
-            CFTypeRef?
-
-        let result =
-            AXUIElementCopyAttributeValue(
-                appElement,
-                kAXWindowsAttribute
-                    as CFString,
-                &rawWindows
-            )
-
-        guard
-            result
-                == .success,
-            let windows =
-                rawWindows
-                as? [AXUIElement]
-        else {
-            return []
-        }
-
-        var states:
-            [AXWindowState] =
-                []
-
-        for window in windows {
-            guard
-                let position =
-                    axPoint(
-                        element:
-                            window,
-                        attribute:
-                            kAXPositionAttribute
-                            as CFString
-                    ),
-                let size =
-                    axSize(
-                        element:
-                            window,
-                        attribute:
-                            kAXSizeAttribute
-                            as CFString
-                    )
-            else {
-                continue
-            }
-
-            var minimizedValue:
-                CFTypeRef?
-
-            if AXUIElementCopyAttributeValue(
-                window,
-                kAXMinimizedAttribute
-                    as CFString,
-                &minimizedValue
-            ) == .success,
-               let minimized =
-                    minimizedValue
-                    as? Bool,
-               minimized {
-                continue
-            }
-
-            let matches =
-                visibleWindows
-                    .contains {
-                        target in
-
-                        abs(
-                            target
-                                .cgFrame
-                                .minX
-                            - position.x
-                        ) <= 8
-
-                        && abs(
-                            target
-                                .cgFrame
-                                .minY
-                            - position.y
-                        ) <= 8
-
-                        && abs(
-                            target
-                                .cgFrame
-                                .width
-                            - size.width
-                        ) <= 12
-
-                        && abs(
-                            target
-                                .cgFrame
-                                .height
-                            - size.height
-                        ) <= 12
-                    }
-
-            guard
-                matches
-            else {
-                continue
-            }
-
-            states.append(
-                AXWindowState(
-                    element:
-                        window,
-                    originalPosition:
-                        position
-                )
-            )
-        }
-
-        return states
     }
 
     private func collectVisibleWindows()
@@ -3440,7 +3718,7 @@ final class AppDelegate:
                     options,
                     kCGNullWindowID
                 )
-                as? [[String: Any]]
+            as? [[String: Any]]
         else {
             return []
         }
@@ -3450,50 +3728,63 @@ final class AppDelegate:
                 .processInfo
                 .processIdentifier
 
+        let ignoredBundleIDs:
+            Set<String> = [
+                "com.apple.dock",
+                "com.apple.systemuiserver",
+                "com.apple.controlcenter",
+                "com.apple.WindowManager",
+                "com.apple.notificationcenterui"
+            ]
+
         var targets:
             [VisibleWindowTarget] =
                 []
 
-        for info in list {
+        for info
+            in list {
             guard
                 let pid =
                     (
                         info[
                             kCGWindowOwnerPID
-                            as String
+                                as String
                         ]
                         as? NSNumber
                     )?
                     .int32Value,
-                pid != ownPID,
+                pid
+                    != ownPID,
 
                 let layer =
                     (
                         info[
                             kCGWindowLayer
-                            as String
+                                as String
                         ]
                         as? NSNumber
                     )?
                     .intValue,
-                layer == 0,
+                layer
+                    == 0,
 
                 let alpha =
                     (
                         info[
                             kCGWindowAlpha
-                            as String
+                                as String
                         ]
                         as? NSNumber
                     )?
                     .doubleValue,
-                alpha > 0.01,
+                alpha
+                    > 0.02,
 
                 let number =
                     (
                         info[
                             kCGWindowNumber
-                            as String
+                                as String
                         ]
                         as? NSNumber
                     )?
@@ -3502,7 +3793,7 @@ final class AppDelegate:
                 let bounds =
                     info[
                         kCGWindowBounds
-                        as String
+                            as String
                     ]
                     as? NSDictionary,
 
@@ -3510,13 +3801,13 @@ final class AppDelegate:
                     CGRect(
                         dictionaryRepresentation:
                             bounds
-                            as CFDictionary
+                                as CFDictionary
                     ),
 
                 cgFrame.width
-                    >= 120,
+                    >= 40,
                 cgFrame.height
-                    >= 80,
+                    >= 40,
 
                 let app =
                     NSRunningApplication(
@@ -3525,24 +3816,36 @@ final class AppDelegate:
                     ),
 
                 !app.isTerminated,
-                app.activationPolicy
-                    == .regular,
-                app.bundleIdentifier
-                    != appBundleID
+                app
+                    .activationPolicy
+                    != .prohibited
             else {
                 continue
             }
 
             let bundleID =
-                app.bundleIdentifier
+                app
+                    .bundleIdentifier
                 ?? "pid:\(pid)"
+
+            guard
+                bundleID
+                    != appBundleID,
+                !ignoredBundleIDs
+                    .contains(
+                        bundleID
+                    )
+            else {
+                continue
+            }
 
             targets.append(
                 VisibleWindowTarget(
                     app:
                         app,
                     appName:
-                        app.localizedName
+                        app
+                            .localizedName
                         ?? "App",
                     bundleID:
                         bundleID,
@@ -3671,36 +3974,6 @@ final class AppDelegate:
         return size
     }
 
-    private func setAXPoint(
-        element:
-            AXUIElement,
-        attribute:
-            CFString,
-        value:
-            CGPoint
-    ) -> Bool {
-        var point =
-            value
-
-        guard
-            let axValue =
-                AXValueCreate(
-                    .cgPoint,
-                    &point
-                )
-        else {
-            return false
-        }
-
-        return
-            AXUIElementSetAttributeValue(
-                element,
-                attribute,
-                axValue
-            )
-            == .success
-    }
-
     private func appKitFrame(
         fromCGWindowFrame frame:
             CGRect
@@ -3711,18 +3984,19 @@ final class AppDelegate:
             )
             .height
 
-        return CGRect(
-            x:
-                frame.minX,
-            y:
-                mainHeight
-                - frame.minY
-                - frame.height,
-            width:
-                frame.width,
-            height:
-                frame.height
-        )
+        return
+            CGRect(
+                x:
+                    frame.minX,
+                y:
+                    mainHeight
+                    - frame.minY
+                    - frame.height,
+                width:
+                    frame.width,
+                height:
+                    frame.height
+            )
     }
 
     private func backingScale(
@@ -3738,10 +4012,12 @@ final class AppDelegate:
             )
 
         if let screen =
-            NSScreen.screens
+            NSScreen
+                .screens
                 .first(
                     where: {
-                        $0.frame
+                        $0
+                            .frame
                             .contains(
                                 center
                             )
@@ -3753,7 +4029,8 @@ final class AppDelegate:
         }
 
         return
-            NSScreen.main?
+            NSScreen
+                .main?
                 .backingScaleFactor
             ?? 2
     }
@@ -3764,7 +4041,9 @@ struct AsymptaBreatheMain {
     @MainActor
     static func main() {
         let app =
-            NSApplication.shared
+            NSApplication
+                .shared
+
         let delegate =
             AppDelegate()
 
@@ -3773,6 +4052,7 @@ struct AsymptaBreatheMain {
 
         app.run()
 
-        _ = delegate
+        _ =
+            delegate
     }
 }
