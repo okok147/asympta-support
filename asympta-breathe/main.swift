@@ -931,7 +931,7 @@ private final class PermissionGateController:
             bodyLabel
                 .stringValue =
                     "Breathe needs Screen Recording to reproduce the desktop behind each app. "
-                    + "Click Approve, then enable Asympta Breathe in Privacy & Security. "
+                    + "Click Approve to open Privacy & Security, then enable Asympta Breathe. "
                     + "If macOS asks you to reopen the app, reopen it — this step will not reset again."
 
             statusLabel
@@ -953,7 +953,7 @@ private final class PermissionGateController:
             bodyLabel
                 .stringValue =
                     "Accessibility lets Breathe identify the focused text field and preserve live typing. "
-                    + "Click Approve, then enable Asympta Breathe in Privacy & Security."
+                    + "Click Approve to open Privacy & Security, then enable Asympta Breathe."
 
             statusLabel
                 .stringValue =
@@ -1012,60 +1012,27 @@ private final class PermissionGateController:
         case .screenRecording:
             statusLabel
                 .stringValue =
-                    "Open Privacy & Security and enable Asympta Breathe. "
-                    + "If macOS asks to reopen it, choose reopen."
+                    "Privacy & Security is opening. Enable Asympta Breathe under Screen Recording. "
+                    + "If macOS asks you to reopen the app, reopen it."
 
-            let granted =
-                CGRequestScreenCaptureAccess()
-
-            if !granted {
-                openPrivacyPane(
-                    "Privacy_ScreenCapture"
-                )
-            }
+            // Do NOT call CGRequestScreenCaptureAccess() here.
+            // That API creates a second native permission dialog.
+            // The onboarding flow intentionally uses only the System Settings
+            // pane so there is one obvious action for the user.
+            openPrivacyPane(
+                "Privacy_ScreenCapture"
+            )
 
         case .accessibility:
             statusLabel
                 .stringValue =
-                    "Open Privacy & Security and enable Asympta Breathe."
+                    "Privacy & Security is opening. Enable Asympta Breathe under Accessibility."
 
-            let key =
-                kAXTrustedCheckOptionPrompt
-                    .takeUnretainedValue()
-                as String
-
-            let options =
-                [key: true]
-                as CFDictionary
-
-            _ =
-                AXIsProcessTrustedWithOptions(
-                    options
-                )
-
-            // If macOS has already suppressed the native prompt, go straight
-            // to the correct Settings pane instead of leaving the user stuck.
-            DispatchQueue
-                .main
-                .asyncAfter(
-                    deadline:
-                        .now()
-                        + 0.45
-                ) {
-                    [weak self] in
-
-                    guard
-                        let self,
-                        !AXIsProcessTrusted()
-                    else {
-                        return
-                    }
-
-                    self
-                        .openPrivacyPane(
-                            "Privacy_Accessibility"
-                        )
-                }
+            // Do NOT call AXIsProcessTrustedWithOptions(prompt: true).
+            // That creates another native prompt in addition to System Settings.
+            openPrivacyPane(
+                "Privacy_Accessibility"
+            )
         }
 
         DispatchQueue
