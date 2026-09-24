@@ -224,6 +224,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         title.isEnabled = false
         menu.addItem(title)
 
+        let version =
+            Bundle.main.object(
+                forInfoDictionaryKey: "CFBundleShortVersionString"
+            ) as? String
+            ?? "—"
+
+        let versionItem = NSMenuItem(
+            title: "Version \(version)",
+            action: nil,
+            keyEquivalent: ""
+        )
+        versionItem.isEnabled = false
+        menu.addItem(versionItem)
+
         let statusText: String
 
         if !CGPreflightScreenCaptureAccess() {
