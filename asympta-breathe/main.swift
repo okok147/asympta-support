@@ -8,6 +8,7 @@ import CoreImage
 private let appBundleID = "com.asympta.breathe"
 private let permissionResetPendingKey = "permissionResetPending"
 private let lastPermissionResetVersionKey = "lastPermissionResetVersion"
+private let didShowWelcomeKey = "didShowWelcomeAfterPermissions"
 
 private let ciContext = CIContext(
     options: [
@@ -556,6 +557,12 @@ private final class FadeSession {
     var focusTimer:
         Timer?
 
+    var hoverTimer:
+        Timer?
+
+    var hoveredWindowID:
+        CGWindowID?
+
     var focusRefreshInFlight =
         false
 
@@ -601,6 +608,319 @@ private final class FadeSession {
 
         focusTimer =
             nil
+
+        hoverTimer?
+            .invalidate()
+
+        hoverTimer =
+            nil
+
+        hoveredWindowID =
+            nil
+    }
+}
+
+@MainActor
+private final class WelcomeWindowController:
+    NSWindowController {
+
+    var onDone:
+        (() -> Void)?
+
+    init() {
+        let window =
+            NSWindow(
+                contentRect:
+                    NSRect(
+                        x: 0,
+                        y: 0,
+                        width: 540,
+                        height: 360
+                    ),
+                styleMask: [
+                    .titled
+                ],
+                backing:
+                    .buffered,
+                defer:
+                    false
+            )
+
+        window.title =
+            "Asympta Breathe"
+
+        window
+            .isReleasedWhenClosed =
+                false
+
+        window.center()
+
+        super.init(
+            window:
+                window
+        )
+
+        configureUI()
+    }
+
+    required init?(
+        coder:
+            NSCoder
+    ) {
+        fatalError(
+            "init(coder:) has not been implemented"
+        )
+    }
+
+    func stop() {
+        close()
+    }
+
+    private func configureUI() {
+        guard
+            let contentView =
+                window?
+                    .contentView
+        else {
+            return
+        }
+
+        let iconView =
+            NSImageView()
+
+        iconView.image =
+            NSApp
+                .applicationIconImage
+
+        iconView
+            .imageScaling =
+                .scaleProportionallyUpOrDown
+
+        iconView
+            .translatesAutoresizingMaskIntoConstraints =
+                false
+
+        let eyebrow =
+            NSTextField(
+                labelWithString:
+                    "WELCOME"
+            )
+
+        eyebrow.font =
+            .systemFont(
+                ofSize:
+                    12,
+                weight:
+                    .semibold
+            )
+
+        eyebrow
+            .textColor =
+                .secondaryLabelColor
+
+        let title =
+            NSTextField(
+                labelWithString:
+                    "Welcome to Asympta Breathe"
+            )
+
+        title.font =
+            .systemFont(
+                ofSize:
+                    27,
+                weight:
+                    .semibold
+            )
+
+        let body =
+            NSTextField(
+                wrappingLabelWithString:
+                    "Enjoy a calmer desktop. When you pause, your open windows breathe out. "
+                    + "Move the pointer over a resting window to preview it more clearly, "
+                    + "then click the app you want to bring back."
+            )
+
+        body.font =
+            .systemFont(
+                ofSize:
+                    14
+            )
+
+        body
+            .textColor =
+                .secondaryLabelColor
+
+        let hint =
+            NSTextField(
+                wrappingLabelWithString:
+                    "Resting: 10%  •  Hover preview: 30%  •  Click: breathe that app back in"
+            )
+
+        hint.font =
+            .systemFont(
+                ofSize:
+                    12,
+                weight:
+                    .medium
+            )
+
+        hint
+            .textColor =
+                .secondaryLabelColor
+
+        let startButton =
+            NSButton(
+                title:
+                    "Enjoy Asympta Breathe",
+                target:
+                    self,
+                action:
+                    #selector(
+                        finishWelcome
+                    )
+            )
+
+        startButton
+            .bezelStyle =
+                .rounded
+
+        startButton
+            .controlSize =
+                .large
+
+        startButton
+            .keyEquivalent =
+                "\r"
+
+        let stack =
+            NSStackView(
+                views: [
+                    eyebrow,
+                    title,
+                    body,
+                    hint,
+                    NSView(),
+                    startButton
+                ]
+            )
+
+        stack.orientation =
+            .vertical
+
+        stack.alignment =
+            .leading
+
+        stack.spacing =
+            14
+
+        stack
+            .translatesAutoresizingMaskIntoConstraints =
+                false
+
+        contentView
+            .addSubview(
+                iconView
+            )
+
+        contentView
+            .addSubview(
+                stack
+            )
+
+        NSLayoutConstraint
+            .activate([
+                iconView
+                    .leadingAnchor
+                    .constraint(
+                        equalTo:
+                            contentView
+                                .leadingAnchor,
+                        constant:
+                            30
+                    ),
+                iconView
+                    .topAnchor
+                    .constraint(
+                        equalTo:
+                            contentView
+                                .topAnchor,
+                        constant:
+                            32
+                    ),
+                iconView
+                    .widthAnchor
+                    .constraint(
+                        equalToConstant:
+                            70
+                    ),
+                iconView
+                    .heightAnchor
+                    .constraint(
+                        equalToConstant:
+                            70
+                    ),
+                stack
+                    .leadingAnchor
+                    .constraint(
+                        equalTo:
+                            iconView
+                                .trailingAnchor,
+                        constant:
+                            22
+                    ),
+                stack
+                    .trailingAnchor
+                    .constraint(
+                        equalTo:
+                            contentView
+                                .trailingAnchor,
+                        constant:
+                            -30
+                    ),
+                stack
+                    .topAnchor
+                    .constraint(
+                        equalTo:
+                            contentView
+                                .topAnchor,
+                        constant:
+                            32
+                    ),
+                stack
+                    .bottomAnchor
+                    .constraint(
+                        equalTo:
+                            contentView
+                                .bottomAnchor,
+                        constant:
+                            -28
+                    ),
+                body
+                    .widthAnchor
+                    .constraint(
+                        equalTo:
+                            stack
+                                .widthAnchor
+                    ),
+                hint
+                    .widthAnchor
+                    .constraint(
+                        equalTo:
+                            stack
+                                .widthAnchor
+                    ),
+                startButton
+                    .widthAnchor
+                    .constraint(
+                        greaterThanOrEqualToConstant:
+                            205
+                    )
+            ])
+    }
+
+    @objc
+    private func finishWelcome() {
+        onDone?()
     }
 }
 
@@ -1156,6 +1476,9 @@ final class AppDelegate:
     private var permissionGate:
         PermissionGateController?
 
+    private var welcomeController:
+        WelcomeWindowController?
+
     private var mainStarted =
         false
 
@@ -1296,6 +1619,9 @@ final class AppDelegate:
             .cancel()
 
         permissionGate?
+            .stop()
+
+        welcomeController?
             .stop()
 
         breatheInImmediately()
@@ -1447,6 +1773,12 @@ final class AppDelegate:
         preparationTask =
             nil
 
+        welcomeController?
+            .stop()
+
+        welcomeController =
+            nil
+
         breatheInImmediately()
 
         tickTimer?
@@ -1584,6 +1916,72 @@ final class AppDelegate:
             true
 
         rebuildMenu()
+
+        showWelcomeIfNeeded()
+    }
+
+    private func showWelcomeIfNeeded() {
+        guard
+            !UserDefaults
+                .standard
+                .bool(
+                    forKey:
+                        didShowWelcomeKey
+                ),
+            welcomeController
+                == nil
+        else {
+            return
+        }
+
+        let welcome =
+            WelcomeWindowController()
+
+        welcome.onDone = {
+            [weak self,
+             weak welcome]
+            in
+
+            UserDefaults
+                .standard
+                .set(
+                    true,
+                    forKey:
+                        didShowWelcomeKey
+                )
+
+            welcome?
+                .stop()
+
+            if self?
+                .welcomeController
+                === welcome {
+                self?
+                    .welcomeController =
+                        nil
+            }
+        }
+
+        welcomeController =
+            welcome
+
+        welcome
+            .showWindow(
+                nil
+            )
+
+        welcome
+            .window?
+            .makeKeyAndOrderFront(
+                nil
+            )
+
+        _ =
+            NSRunningApplication
+                .current
+                .activate(
+                    options: []
+                )
     }
 
     private func buildStatusItem() {
@@ -2854,6 +3252,11 @@ final class AppDelegate:
                 newSession
         )
 
+        startHoverTracking(
+            session:
+                newSession
+        )
+
         startFocusTracking(
             session:
                 newSession
@@ -2976,6 +3379,175 @@ final class AppDelegate:
                             )
                     }
                 }
+    }
+
+    private func startHoverTracking(
+        session:
+            FadeSession
+    ) {
+        updateHoverPreview(
+            session:
+                session
+        )
+
+        session.hoverTimer =
+            Timer
+                .scheduledTimer(
+                    withTimeInterval:
+                        0.06,
+                    repeats:
+                        true
+                ) {
+                    [weak self,
+                     weak session]
+                    _ in
+
+                    Task {
+                        @MainActor in
+
+                        guard
+                            let self,
+                            let session,
+                            self
+                                .session
+                                === session
+                        else {
+                            return
+                        }
+
+                        self
+                            .updateHoverPreview(
+                                session:
+                                    session
+                            )
+                    }
+                }
+    }
+
+    private func updateHoverPreview(
+        session:
+            FadeSession
+    ) {
+        let point =
+            NSEvent
+                .mouseLocation
+
+        let hovered =
+            session
+                .overlays
+                .first(
+                    where: {
+                        session
+                            .remainingPIDs
+                            .contains(
+                                $0
+                                    .target
+                                    .app
+                                    .processIdentifier
+                            )
+                        && $0
+                            .panel
+                            .frame
+                            .contains(
+                                point
+                            )
+                    }
+                )
+
+        let newHoveredWindowID =
+            hovered?
+                .target
+                .window
+                .windowID
+
+        guard
+            newHoveredWindowID
+            != session
+                .hoveredWindowID
+        else {
+            return
+        }
+
+        session
+            .hoveredWindowID =
+                newHoveredWindowID
+
+        let restingCoverAlpha =
+            CGFloat(
+                1
+                - restingOpacity
+            )
+
+        let hoverCoverAlpha:
+            CGFloat =
+                0.70
+
+        NSAnimationContext
+            .runAnimationGroup {
+                context in
+
+                context.duration =
+                    0.16
+
+                context
+                    .timingFunction =
+                        CAMediaTimingFunction(
+                            controlPoints:
+                                0.22,
+                            1,
+                            0.36,
+                            1
+                        )
+
+                context
+                    .allowsImplicitAnimation =
+                        true
+
+                for overlay
+                    in session
+                        .overlays {
+                    let pid =
+                        overlay
+                            .target
+                            .app
+                            .processIdentifier
+
+                    guard
+                        session
+                            .remainingPIDs
+                            .contains(
+                                pid
+                            )
+                    else {
+                        continue
+                    }
+
+                    let isHovered =
+                        overlay
+                            .target
+                            .window
+                            .windowID
+                        == newHoveredWindowID
+
+                    overlay
+                        .view
+                        .coverImageView
+                        .animator()
+                        .alphaValue =
+                            isHovered
+                            ? hoverCoverAlpha
+                            : restingCoverAlpha
+
+                    overlay
+                        .view
+                        .borderImageView
+                        .animator()
+                        .alphaValue =
+                            isHovered
+                            ? 0.96
+                            : 0.72
+                }
+            }
     }
 
     private func startFocusTracking(
@@ -3434,6 +4006,24 @@ final class AppDelegate:
             .insert(
                 pid
             )
+
+        if let hoveredID =
+            current
+                .hoveredWindowID,
+           overlays
+            .contains(
+                where: {
+                    $0
+                        .target
+                        .window
+                        .windowID
+                    == hoveredID
+                }
+            ) {
+            current
+                .hoveredWindowID =
+                    nil
+        }
 
         NSAnimationContext
             .runAnimationGroup {
