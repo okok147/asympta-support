@@ -2421,7 +2421,10 @@ final class AppDelegate:
                                 false
 
                         self
-                            .showPermissionGate()
+                            .showPermissionGate(
+                                step:
+                                    .screenRecording
+                            )
                     }
                 }
             }
