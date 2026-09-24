@@ -6,6 +6,39 @@ import ApplicationServices
 
 private let appBundleID = "com.asympta.breathe"
 
+private func resetTCCService(
+    _ service: String
+) -> Bool {
+    let process = Process()
+    process.executableURL = URL(
+        fileURLWithPath: "/usr/bin/tccutil"
+    )
+    process.arguments = [
+        "reset",
+        service,
+        Bundle.main.bundleIdentifier
+            ?? appBundleID
+    ]
+
+    do {
+        try process.run()
+        process.waitUntilExit()
+        return process.terminationStatus == 0
+    } catch {
+        return false
+    }
+}
+
+private func resetAsymptaPermissions() -> Bool {
+    // Run both resets before requesting either permission again.
+    let screenReset =
+        resetTCCService("ScreenCapture")
+    let accessibilityReset =
+        resetTCCService("Accessibility")
+
+    return screenReset && accessibilityReset
+}
+
 private struct TargetWindow {
     let windowID: CGWindowID
     let cgFrame: CGRect
@@ -141,6 +174,12 @@ private final class PermissionGateController: NSWindowController {
         action: nil
     )
 
+    private let resetButton = NSButton(
+        title: "Reset & Re-Approve",
+        target: nil,
+        action: nil
+    )
+
     private let footerStatus = NSTextField(
         labelWithString:
             "Both permissions must be verified before Asympta Breathe can start."
@@ -237,6 +276,10 @@ private final class PermissionGateController: NSWindowController {
         refreshButton.bezelStyle = .rounded
         refreshButton.keyEquivalent = "\r"
 
+        resetButton.target = self
+        resetButton.action = #selector(resetAndReapprove)
+        resetButton.bezelStyle = .rounded
+
         footerStatus.font = .systemFont(
             ofSize: 12,
             weight: .medium
@@ -254,6 +297,7 @@ private final class PermissionGateController: NSWindowController {
             views: [
                 footerStatus,
                 NSView(),
+                resetButton,
                 refreshButton,
                 quit
             ]
@@ -425,6 +469,7 @@ private final class PermissionGateController: NSWindowController {
         refreshInProgress = true
 
         refreshButton.isEnabled = false
+        resetButton.isEnabled = false
 
         accessibilityStatus.stringValue = "Checking…"
         screenStatus.stringValue =
@@ -470,6 +515,7 @@ private final class PermissionGateController: NSWindowController {
 
         refreshInProgress = false
         refreshButton.isEnabled = true
+        resetButton.isEnabled = true
 
         if screenVerified && accessibilityVerified {
             footerStatus.stringValue =
@@ -526,6 +572,93 @@ private final class PermissionGateController: NSWindowController {
             await self?.refresh(
                 forceScreenProbe: true
             )
+        }
+    }
+
+    @objc private func resetAndReapprove() {
+        let alert = NSAlert()
+        alert.messageText = "Reset permissions?"
+        alert.informativeText =
+            "This removes Asympta Breathe's current Screen Recording "
+            + "and Accessibility approvals. macOS will ask you to approve "
+            + "both again."
+        alert.alertStyle = .warning
+        alert.addButton(
+            withTitle: "Reset & Re-Approve"
+        )
+        alert.addButton(
+            withTitle: "Cancel"
+        )
+
+        guard alert.runModal() == .alertFirstButtonReturn else {
+            return
+        }
+
+        pollTimer?.invalidate()
+        pollTimer = nil
+        didDeliverReady = false
+        screenVerified = false
+        accessibilityVerified = false
+
+        screenStatus.stringValue = "Resetting…"
+        accessibilityStatus.stringValue = "Resetting…"
+        footerStatus.stringValue =
+            "Removing existing approvals…"
+        footerStatus.textColor = .secondaryLabelColor
+
+        refreshButton.isEnabled = false
+        resetButton.isEnabled = false
+        screenButton.isEnabled = false
+        accessibilityButton.isEnabled = false
+
+        let resetSucceeded =
+            resetAsymptaPermissions()
+
+        if !resetSucceeded {
+            footerStatus.stringValue =
+                "macOS could not reset one or more permissions. "
+                + "Open System Settings and remove Asympta Breathe manually, "
+                + "then press Refresh Permissions."
+            footerStatus.textColor = .systemRed
+            refreshButton.isEnabled = true
+            resetButton.isEnabled = true
+            startMonitoring()
+            return
+        }
+
+        screenStatus.stringValue =
+            "Reset — approval required"
+        accessibilityStatus.stringValue =
+            "Reset — approval required"
+        footerStatus.stringValue =
+            "Reset complete. macOS will ask for both permissions again."
+        footerStatus.textColor = .secondaryLabelColor
+
+        startMonitoring()
+
+        DispatchQueue.main.asyncAfter(
+            deadline: .now() + 0.25
+        ) { [weak self] in
+            guard let self else { return }
+
+            // Screen Recording first. This call returns after the system
+            // permission interaction, then Accessibility is requested.
+            _ = CGRequestScreenCaptureAccess()
+
+            let key =
+                kAXTrustedCheckOptionPrompt
+                    .takeUnretainedValue() as String
+            let options =
+                [key: true] as CFDictionary
+            _ = AXIsProcessTrustedWithOptions(
+                options
+            )
+
+            Task { @MainActor in
+                await self.refresh(
+                    forceScreenProbe: true
+                )
+            }
         }
     }
 
@@ -597,6 +730,58 @@ private final class PermissionGateController: NSWindowController {
         }
 
         NSWorkspace.shared.open(url)
+    }
+
+    @objc private func resetPermissionsFromMenu() {
+        let alert = NSAlert()
+        alert.messageText = "Reset permissions?"
+        alert.informativeText =
+            "This removes Asympta Breathe's current Screen Recording "
+            + "and Accessibility approvals, then returns to the permission "
+            + "setup so you can approve both again."
+        alert.alertStyle = .warning
+        alert.addButton(
+            withTitle: "Reset & Re-Approve"
+        )
+        alert.addButton(
+            withTitle: "Cancel"
+        )
+
+        guard alert.runModal() == .alertFirstButtonReturn else {
+            return
+        }
+
+        captureTask?.cancel()
+        captureTask = nil
+        breatheInImmediately()
+
+        let resetSucceeded =
+            resetAsymptaPermissions()
+
+        screenPermission = false
+        accessibilityPermission = false
+        mainStarted = false
+
+        showPermissionGate()
+
+        guard resetSucceeded else {
+            return
+        }
+
+        DispatchQueue.main.asyncAfter(
+            deadline: .now() + 0.30
+        ) {
+            _ = CGRequestScreenCaptureAccess()
+
+            let key =
+                kAXTrustedCheckOptionPrompt
+                    .takeUnretainedValue() as String
+            let options =
+                [key: true] as CFDictionary
+            _ = AXIsProcessTrustedWithOptions(
+                options
+            )
+        }
     }
 
     @objc private func quitApp() {
@@ -956,6 +1141,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         accessibilityItem.target = self
         accessibilityItem.isEnabled = !accessibilityPermission
         menu.addItem(accessibilityItem)
+
+        let resetPermissionsItem = NSMenuItem(
+            title: "Reset & Re-Approve Permissions…",
+            action: #selector(resetPermissionsFromMenu),
+            keyEquivalent: ""
+        )
+        resetPermissionsItem.target = self
+        menu.addItem(resetPermissionsItem)
 
         menu.addItem(.separator())
 
