@@ -1,0 +1,38 @@
+name: Build Asympta Breathe macOS
+
+on:
+  push:
+    branches:
+      - codex/asympta-breathe-native-v110
+    paths:
+      - 'asympta-breathe/**'
+      - '.github/workflows/asympta-breathe-build.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: macos-15
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build universal native app
+        run: bash asympta-breathe/build.sh
+      - name: Verify architecture and bundle
+        run: |
+          set -euo pipefail
+          APP='asympta-breathe/dist/Asympta Breathe.app'
+          file "$APP/Contents/MacOS/AsymptaBreathe"
+          lipo -info "$APP/Contents/MacOS/AsymptaBreathe" | tee /tmp/arch.txt
+          grep -q arm64 /tmp/arch.txt
+          grep -q x86_64 /tmp/arch.txt
+          codesign --verify --deep --strict --verbose=2 "$APP"
+          plutil -lint "$APP/Contents/Info.plist"
+      - name: Upload app
+        uses: actions/upload-artifact@v4
+        with:
+          name: Asympta-Breathe-1.1.0
+          path: asympta-breathe/dist/package/Asympta-Breathe-1.1.0.zip
+          if-no-files-found: error
