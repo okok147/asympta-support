@@ -2,9 +2,9 @@ import AppKit
 import ScreenCaptureKit
 import CoreGraphics
 import QuartzCore
+import ApplicationServices
 
 private let appBundleID = "com.asympta.breathe"
-private let anyInputEvent = CGEventType(rawValue: UInt32.max)!
 
 private struct TargetWindow {
     let windowID: CGWindowID
@@ -23,6 +23,11 @@ private struct CapturedWindow {
     let image: CGImage
 }
 
+private struct AXWindowState {
+    let element: AXUIElement
+    let originalPosition: CGPoint
+}
+
 @MainActor
 private final class BreathOverlayView: NSView {
     let imageView: NSImageView
@@ -34,8 +39,8 @@ private final class BreathOverlayView: NSView {
 
         wantsLayer = true
         layer?.backgroundColor = NSColor.clear.cgColor
-        layer?.borderWidth = 1.25
-        layer?.borderColor = NSColor.labelColor.withAlphaComponent(0.38).cgColor
+        layer?.borderWidth = 1.4
+        layer?.borderColor = NSColor.labelColor.withAlphaComponent(0.42).cgColor
         layer?.cornerRadius = 11
         layer?.masksToBounds = true
 
@@ -72,16 +77,19 @@ private final class FadeSession {
     let target: AppTarget
     let panels: [BreathPanel]
     let views: [BreathOverlayView]
+    let axWindows: [AXWindowState]
     var isInhaling = false
 
     init(
         target: AppTarget,
         panels: [BreathPanel],
-        views: [BreathOverlayView]
+        views: [BreathOverlayView],
+        axWindows: [AXWindowState]
     ) {
         self.target = target
         self.panels = panels
         self.views = views
+        self.axWindows = axWindows
     }
 }
 
@@ -135,13 +143,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
-    private var restingOpacity: Double {
-        0.10
-    }
-
-    private var inhaleSeconds: Double {
-        0.70
-    }
+    private let restingOpacity = 0.10
+    private let inhaleSeconds = 0.72
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.accessory)
@@ -156,7 +159,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         installWorkspaceObserver()
 
         tickTimer = Timer.scheduledTimer(
-            withTimeInterval: 0.15,
+            withTimeInterval: 0.12,
             repeats: true
         ) { [weak self] _ in
             Task { @MainActor in
@@ -169,6 +172,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
             if !CGPreflightScreenCaptureAccess() {
                 _ = CGRequestScreenCaptureAccess()
+            }
+
+            if !AXIsProcessTrusted() {
+                self.requestAccessibility()
             }
 
             self.rebuildMenu()
@@ -221,6 +228,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         if !CGPreflightScreenCaptureAccess() {
             statusText = "Screen Recording permission needed"
+        } else if !AXIsProcessTrusted() {
+            statusText = "Accessibility permission needed"
         } else if let session {
             statusText = session.isInhaling
                 ? "Breathing in · \(session.target.appName)"
@@ -262,6 +271,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         breathe.target = self
         breathe.isEnabled =
             CGPreflightScreenCaptureAccess()
+            && AXIsProcessTrusted()
             && session == nil
             && captureTask == nil
             && (lastExternalPID != nil || currentFrontmostTarget() != nil)
@@ -305,19 +315,33 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         resting.isEnabled = false
         menu.addItem(resting)
 
-        let permissionAllowed = CGPreflightScreenCaptureAccess()
-        let permission = NSMenuItem(
-            title: permissionAllowed
+        let screenPermissionAllowed = CGPreflightScreenCaptureAccess()
+        let screenPermission = NSMenuItem(
+            title: screenPermissionAllowed
                 ? "Screen Recording: Allowed"
                 : "Grant Screen Recording…",
-            action: permissionAllowed
+            action: screenPermissionAllowed
                 ? nil
                 : #selector(requestScreenRecording),
             keyEquivalent: ""
         )
-        permission.target = self
-        permission.isEnabled = !permissionAllowed
-        menu.addItem(permission)
+        screenPermission.target = self
+        screenPermission.isEnabled = !screenPermissionAllowed
+        menu.addItem(screenPermission)
+
+        let accessibilityAllowed = AXIsProcessTrusted()
+        let accessibility = NSMenuItem(
+            title: accessibilityAllowed
+                ? "Accessibility: Allowed"
+                : "Grant Accessibility…",
+            action: accessibilityAllowed
+                ? nil
+                : #selector(requestAccessibilityFromMenu),
+            keyEquivalent: ""
+        )
+        accessibility.target = self
+        accessibility.isEnabled = !accessibilityAllowed
+        menu.addItem(accessibility)
 
         menu.addItem(.separator())
 
@@ -330,12 +354,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         menu.addItem(scope)
 
         let hint = NSMenuItem(
-            title: "Click the faded app to breathe it back in",
+            title: "Mouse, click, scroll or typing count as active",
             action: nil,
             keyEquivalent: ""
         )
         hint.isEnabled = false
         menu.addItem(hint)
+
+        let hint2 = NSMenuItem(
+            title: "Click the faded app to breathe it back in",
+            action: nil,
+            keyEquivalent: ""
+        )
+        hint2.isEnabled = false
+        menu.addItem(hint2)
 
         let quit = NSMenuItem(
             title: "Quit Asympta Breathe",
@@ -410,17 +442,48 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func tick() {
         guard enabled else { return }
-        guard session == nil, captureTask == nil else { return }
 
-        let idle = CGEventSource.secondsSinceLastEventType(
-            .combinedSessionState,
-            eventType: anyInputEvent
-        )
+        let activityIdle = secondsSinceRelevantInput()
 
-        guard idle >= idleSeconds else { return }
+        if session != nil {
+            if activityIdle < 0.18 {
+                breatheIn()
+            }
+            return
+        }
+
+        guard captureTask == nil else { return }
+        guard activityIdle >= idleSeconds else { return }
+        guard CGPreflightScreenCaptureAccess() else { return }
+        guard AXIsProcessTrusted() else { return }
         guard let target = currentFrontmostTarget() else { return }
 
         startBreatheOut(target: target)
+    }
+
+    private func secondsSinceRelevantInput() -> Double {
+        let types: [CGEventType] = [
+            .mouseMoved,
+            .leftMouseDragged,
+            .rightMouseDragged,
+            .otherMouseDragged,
+            .leftMouseDown,
+            .rightMouseDown,
+            .otherMouseDown,
+            .scrollWheel,
+            .keyDown,
+            .flagsChanged
+        ]
+
+        return types
+            .map {
+                CGEventSource.secondsSinceLastEventType(
+                    .combinedSessionState,
+                    eventType: $0
+                )
+            }
+            .min()
+            ?? .greatestFiniteMagnitude
     }
 
     @objc private func toggleEnabled() {
@@ -441,7 +504,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
 
         guard let target else {
-            NSSound.beep()
+            return
+        }
+
+        guard CGPreflightScreenCaptureAccess(), AXIsProcessTrusted() else {
+            if !CGPreflightScreenCaptureAccess() {
+                _ = CGRequestScreenCaptureAccess()
+            }
+            if !AXIsProcessTrusted() {
+                requestAccessibility()
+            }
+            rebuildMenu()
             return
         }
 
@@ -469,18 +542,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         rebuildMenu()
     }
 
+    @objc private func requestAccessibilityFromMenu() {
+        requestAccessibility()
+        rebuildMenu()
+    }
+
     @objc private func quitApp() {
         NSApp.terminate(nil)
     }
 
+    private func requestAccessibility() {
+        let key = kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String
+        let options = [key: true] as CFDictionary
+        _ = AXIsProcessTrustedWithOptions(options)
+    }
+
     private func startBreatheOut(target: AppTarget) {
         guard session == nil, captureTask == nil else { return }
-
-        guard CGPreflightScreenCaptureAccess() else {
-            _ = CGRequestScreenCaptureAccess()
-            rebuildMenu()
-            return
-        }
 
         captureTask = Task { [weak self] in
             guard let self else { return }
@@ -504,25 +582,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                         continue
                     }
 
-                    let filter =
-                        SCContentFilter(
-                            desktopIndependentWindow: scWindow
-                        )
+                    let filter = SCContentFilter(
+                        desktopIndependentWindow: scWindow
+                    )
 
                     let config = SCStreamConfiguration()
-                    let scale =
-                        self.backingScale(for: window.appKitFrame)
+                    let scale = self.backingScale(for: window.appKitFrame)
 
-                    config.width =
-                        max(
-                            1,
-                            Int(window.cgFrame.width * scale)
-                        )
-                    config.height =
-                        max(
-                            1,
-                            Int(window.cgFrame.height * scale)
-                        )
+                    config.width = max(
+                        1,
+                        Int(window.cgFrame.width * scale)
+                    )
+                    config.height = max(
+                        1,
+                        Int(window.cgFrame.height * scale)
+                    )
                     config.showsCursor = false
                     config.queueDepth = 1
                     config.shouldBeOpaque = false
@@ -548,19 +622,29 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
                 guard !captured.isEmpty else {
                     self.captureTask = nil
-                    NSSound.beep()
+                    return
+                }
+
+                let axWindows = self.collectAXWindowStates(
+                    for: target.app.processIdentifier
+                )
+
+                guard !axWindows.isEmpty else {
+                    self.captureTask = nil
+                    self.requestAccessibility()
+                    self.rebuildMenu()
                     return
                 }
 
                 self.captureTask = nil
                 self.presentBreatheOut(
                     target: target,
-                    captured: captured
+                    captured: captured,
+                    axWindows: axWindows
                 )
 
             } catch {
                 self.captureTask = nil
-                NSSound.beep()
                 self.rebuildMenu()
             }
         }
@@ -568,7 +652,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func presentBreatheOut(
         target: AppTarget,
-        captured: [CapturedWindow]
+        captured: [CapturedWindow],
+        axWindows: [AXWindowState]
     ) {
         guard session == nil else { return }
 
@@ -607,11 +692,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 )
             )
 
-            overlay.imageView.image =
-                NSImage(
-                    cgImage: item.image,
-                    size: item.target.appKitFrame.size
-                )
+            overlay.imageView.image = NSImage(
+                cgImage: item.image,
+                size: item.target.appKitFrame.size
+            )
 
             panel.contentView = overlay
 
@@ -622,15 +706,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let newSession = FadeSession(
             target: target,
             panels: panels,
-            views: views
+            views: views,
+            axWindows: axWindows
         )
 
         for view in views {
             view.onClick = { [weak self, weak newSession] in
                 Task { @MainActor in
-                    guard let self,
-                          let newSession,
-                          self.session === newSession
+                    guard
+                        let self,
+                        let newSession,
+                        self.session === newSession
                     else {
                         return
                     }
@@ -644,9 +730,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         panels.forEach { $0.orderFrontRegardless() }
 
-        // The full-opacity captured window is already covering the real app.
-        // Hiding the real app after one compositor turn changes nothing
-        // visually, then we can fade the captured representation to 10%.
         DispatchQueue.main.asyncAfter(
             deadline: .now() + 0.055
         ) { [weak self, weak newSession] in
@@ -658,9 +741,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 return
             }
 
-            guard target.app.hide() else {
+            guard self.moveAXWindowsOffscreen(newSession.axWindows) else {
                 self.closeSessionWithoutRestoring(newSession)
-                NSSound.beep()
+                self.rebuildMenu()
                 return
             }
 
@@ -728,7 +811,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     return
                 }
 
-                _ = current.target.app.unhide()
+                self.restoreAXWindows(current.axWindows)
                 _ = current.target.app.activate(options: [])
 
                 DispatchQueue.main.asyncAfter(
@@ -764,7 +847,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         guard let current = session else { return }
 
-        _ = current.target.app.unhide()
+        restoreAXWindows(current.axWindows)
 
         current.panels.forEach {
             $0.orderOut(nil)
@@ -778,6 +861,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func closeSessionWithoutRestoring(
         _ current: FadeSession
     ) {
+        restoreAXWindows(current.axWindows)
+
         current.panels.forEach {
             $0.orderOut(nil)
             $0.close()
@@ -786,8 +871,195 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if session === current {
             session = nil
         }
+    }
 
-        rebuildMenu()
+    private func collectAXWindowStates(
+        for pid: pid_t
+    ) -> [AXWindowState] {
+        let appElement = AXUIElementCreateApplication(pid)
+
+        var rawWindows: CFTypeRef?
+        let result = AXUIElementCopyAttributeValue(
+            appElement,
+            kAXWindowsAttribute as CFString,
+            &rawWindows
+        )
+
+        guard
+            result == .success,
+            let windows = rawWindows as? [AXUIElement]
+        else {
+            return []
+        }
+
+        var states: [AXWindowState] = []
+
+        for window in windows {
+            guard
+                let position = axPoint(
+                    element: window,
+                    attribute: kAXPositionAttribute as CFString
+                ),
+                let size = axSize(
+                    element: window,
+                    attribute: kAXSizeAttribute as CFString
+                ),
+                size.width >= 120,
+                size.height >= 80
+            else {
+                continue
+            }
+
+            var minimizedValue: CFTypeRef?
+            if AXUIElementCopyAttributeValue(
+                window,
+                kAXMinimizedAttribute as CFString,
+                &minimizedValue
+            ) == .success,
+               let minimized = minimizedValue as? Bool,
+               minimized {
+                continue
+            }
+
+            states.append(
+                AXWindowState(
+                    element: window,
+                    originalPosition: position
+                )
+            )
+        }
+
+        return states
+    }
+
+    private func moveAXWindowsOffscreen(
+        _ windows: [AXWindowState]
+    ) -> Bool {
+        var moved = false
+
+        for (index, state) in windows.enumerated() {
+            let destination = CGPoint(
+                x: -12_000 - CGFloat(index * 40),
+                y: state.originalPosition.y
+            )
+
+            if setAXPoint(
+                element: state.element,
+                attribute: kAXPositionAttribute as CFString,
+                value: destination
+            ) {
+                moved = true
+            }
+        }
+
+        return moved
+    }
+
+    private func restoreAXWindows(
+        _ windows: [AXWindowState]
+    ) {
+        for state in windows {
+            _ = setAXPoint(
+                element: state.element,
+                attribute: kAXPositionAttribute as CFString,
+                value: state.originalPosition
+            )
+        }
+    }
+
+    private func axPoint(
+        element: AXUIElement,
+        attribute: CFString
+    ) -> CGPoint? {
+        var raw: CFTypeRef?
+
+        guard
+            AXUIElementCopyAttributeValue(
+                element,
+                attribute,
+                &raw
+            ) == .success,
+            let raw,
+            CFGetTypeID(raw) == AXValueGetTypeID()
+        else {
+            return nil
+        }
+
+        let value = raw as! AXValue
+
+        guard AXValueGetType(value) == .cgPoint else {
+            return nil
+        }
+
+        var point = CGPoint.zero
+
+        guard AXValueGetValue(
+            value,
+            .cgPoint,
+            &point
+        ) else {
+            return nil
+        }
+
+        return point
+    }
+
+    private func axSize(
+        element: AXUIElement,
+        attribute: CFString
+    ) -> CGSize? {
+        var raw: CFTypeRef?
+
+        guard
+            AXUIElementCopyAttributeValue(
+                element,
+                attribute,
+                &raw
+            ) == .success,
+            let raw,
+            CFGetTypeID(raw) == AXValueGetTypeID()
+        else {
+            return nil
+        }
+
+        let value = raw as! AXValue
+
+        guard AXValueGetType(value) == .cgSize else {
+            return nil
+        }
+
+        var size = CGSize.zero
+
+        guard AXValueGetValue(
+            value,
+            .cgSize,
+            &size
+        ) else {
+            return nil
+        }
+
+        return size
+    }
+
+    private func setAXPoint(
+        element: AXUIElement,
+        attribute: CFString,
+        value: CGPoint
+    ) -> Bool {
+        var point = value
+
+        guard let axValue = AXValueCreate(
+            .cgPoint,
+            &point
+        ) else {
+            return false
+        }
+
+        return AXUIElementSetAttributeValue(
+            element,
+            attribute,
+            axValue
+        ) == .success
     }
 
     private func currentFrontmostTarget() -> AppTarget? {
