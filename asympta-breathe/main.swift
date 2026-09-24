@@ -522,6 +522,74 @@ private final class BreathOverlayView:
             .isHidden =
                 false
     }
+
+    func setOcclusionMask(
+        windowFrame:
+            CGRect,
+        frontWindowFrames:
+            [CGRect]
+    ) {
+        let path =
+            CGMutablePath()
+
+        path.addRect(
+            bounds
+        )
+
+        for frontFrame
+            in frontWindowFrames {
+            let overlap =
+                windowFrame
+                    .intersection(
+                        frontFrame
+                    )
+
+            guard
+                !overlap.isNull,
+                overlap.width > 0,
+                overlap.height > 0
+            else {
+                continue
+            }
+
+            let local =
+                CGRect(
+                    x:
+                        overlap.minX
+                        - windowFrame.minX,
+                    y:
+                        overlap.minY
+                        - windowFrame.minY,
+                    width:
+                        overlap.width,
+                    height:
+                        overlap.height
+                )
+
+            path.addRect(
+                local
+            )
+        }
+
+        let mask =
+            CAShapeLayer()
+
+        mask.frame =
+            bounds
+
+        mask.path =
+            path
+
+        mask.fillRule =
+            .evenOdd
+
+        mask.fillColor =
+            NSColor.white
+                .cgColor
+
+        layer?.mask =
+            mask
+    }
 }
 
 private final class BreathPanel:
@@ -753,7 +821,7 @@ private final class WelcomeWindowController:
         let hint =
             NSTextField(
                 wrappingLabelWithString:
-                    "Resting: 10%  •  Hover preview: 30%  •  Click: breathe that app back in"
+                    "Resting opacity and all three timing phases are adjustable from the menu bar."
             )
 
         hint.font =
@@ -1586,11 +1654,135 @@ final class AppDelegate:
         }
     }
 
-    private let restingOpacity =
-        0.10
+    private var inhaleSeconds:
+        Double {
+        get {
+            let value =
+                UserDefaults
+                    .standard
+                    .double(
+                        forKey:
+                            "inhaleSeconds"
+                    )
 
-    private let inhaleSeconds =
-        0.72
+            return
+                value > 0
+                ? min(
+                    max(
+                        value,
+                        0.2
+                    ),
+                    10
+                )
+                : 1.8
+        }
+
+        set {
+            UserDefaults
+                .standard
+                .set(
+                    min(
+                        max(
+                            newValue,
+                            0.2
+                        ),
+                        10
+                    ),
+                    forKey:
+                        "inhaleSeconds"
+                )
+
+            rebuildMenu()
+        }
+    }
+
+    private var restingOpacity:
+        Double {
+        get {
+            guard
+                UserDefaults
+                    .standard
+                    .object(
+                        forKey:
+                            "restingOpacity"
+                    )
+                != nil
+            else {
+                return 0.10
+            }
+
+            return
+                min(
+                    max(
+                        UserDefaults
+                            .standard
+                            .double(
+                                forKey:
+                                    "restingOpacity"
+                            ),
+                        0.02
+                    ),
+                    0.80
+                )
+        }
+
+        set {
+            UserDefaults
+                .standard
+                .set(
+                    min(
+                        max(
+                            newValue,
+                            0.02
+                        ),
+                        0.80
+                    ),
+                    forKey:
+                        "restingOpacity"
+                )
+
+            if let session {
+                applyLayerOcclusion(
+                    session:
+                        session
+                )
+
+                let restingCover =
+                    CGFloat(
+                        1
+                        - restingOpacity
+                    )
+
+                for overlay
+                    in session
+                        .overlays {
+                    let pid =
+                        overlay
+                            .target
+                            .app
+                            .processIdentifier
+
+                    guard
+                        session
+                            .remainingPIDs
+                            .contains(
+                                pid
+                            )
+                    else {
+                        continue
+                    }
+
+                    overlay
+                        .view
+                        .coverImageView
+                        .alphaValue =
+                            restingCover
+                }
+            }
+
+            rebuildMenu()
+        }
+    }
 
     func applicationDidFinishLaunching(
         _ notification:
@@ -2276,21 +2468,49 @@ final class AppDelegate:
             )
         )
 
-        let resting =
-            NSMenuItem(
+        menu.addItem(
+            makeValueMenu(
                 title:
-                    "Resting content: 10%",
-                action:
-                    nil,
-                keyEquivalent:
-                    ""
+                    "Inhale duration",
+                current:
+                    inhaleSeconds,
+                values: [
+                    0.6,
+                    1.2,
+                    1.8,
+                    3,
+                    5
+                ],
+                selector:
+                    #selector(
+                        setInhaleDuration(
+                            _:
+                        )
+                    )
             )
-
-        resting.isEnabled =
-            false
+        )
 
         menu.addItem(
-            resting
+            makePercentMenu(
+                title:
+                    "Resting content",
+                current:
+                    restingOpacity,
+                values: [
+                    0.05,
+                    0.10,
+                    0.15,
+                    0.20,
+                    0.30,
+                    0.40
+                ],
+                selector:
+                    #selector(
+                        setRestingOpacity(
+                            _:
+                        )
+                    )
+            )
         )
 
         let reset =
@@ -2406,7 +2626,9 @@ final class AppDelegate:
         let parent =
             NSMenuItem(
                 title:
-                    "\(title): \(Int(current))s",
+                    current.rounded() == current
+                    ? "\(title): \(Int(current))s"
+                    : "\(title): \(String(format: "%.1f", current))s",
                 action:
                     nil,
                 keyEquivalent:
@@ -2420,7 +2642,78 @@ final class AppDelegate:
             let item =
                 NSMenuItem(
                     title:
-                        "\(Int(value)) seconds",
+                        value.rounded() == value
+                        ? "\(Int(value)) seconds"
+                        : "\(String(format: "%.1f", value)) seconds",
+                    action:
+                        selector,
+                    keyEquivalent:
+                        ""
+                )
+
+            item.target =
+                self
+
+            item
+                .representedObject =
+                    value
+
+            item.state =
+                abs(
+                    value
+                    - current
+                ) < 0.001
+                ? .on
+                : .off
+
+            submenu.addItem(
+                item
+            )
+        }
+
+        parent.submenu =
+            submenu
+
+        return parent
+    }
+
+    private func makePercentMenu(
+        title:
+            String,
+        current:
+            Double,
+        values:
+            [Double],
+        selector:
+            Selector
+    ) -> NSMenuItem {
+        let percent =
+            Int(
+                round(
+                    current
+                    * 100
+                )
+            )
+
+        let parent =
+            NSMenuItem(
+                title:
+                    "\(title): \(percent)%",
+                action:
+                    nil,
+                keyEquivalent:
+                    ""
+            )
+
+        let submenu =
+            NSMenu()
+
+        for value
+            in values {
+            let item =
+                NSMenuItem(
+                    title:
+                        "\(Int(round(value * 100)))%",
                     action:
                         selector,
                     keyEquivalent:
@@ -2590,6 +2883,34 @@ final class AppDelegate:
                 .representedObject
             as? Double {
             fadeSeconds =
+                value
+        }
+    }
+
+    @objc
+    private func setInhaleDuration(
+        _ sender:
+            NSMenuItem
+    ) {
+        if let value =
+            sender
+                .representedObject
+            as? Double {
+            inhaleSeconds =
+                value
+        }
+    }
+
+    @objc
+    private func setRestingOpacity(
+        _ sender:
+            NSMenuItem
+    ) {
+        if let value =
+            sender
+                .representedObject
+            as? Double {
+            restingOpacity =
                 value
         }
     }
@@ -3247,6 +3568,11 @@ final class AppDelegate:
                 .orderFrontRegardless()
         }
 
+        applyLayerOcclusion(
+            session:
+                newSession
+        )
+
         installClickMonitor(
             session:
                 newSession
@@ -3307,6 +3633,70 @@ final class AppDelegate:
             }
 
         rebuildMenu()
+    }
+
+    private func applyLayerOcclusion(
+        session:
+            FadeSession
+    ) {
+        // Real CGWindow order is front-to-back. Each Breathe overlay gets a
+        // layer mask that removes portions physically covered by windows above it.
+        // This prevents a back overlay from painting over a front window.
+        let realWindows =
+            collectVisibleWindows()
+
+        let indexByWindowID =
+            Dictionary(
+                uniqueKeysWithValues:
+                    realWindows
+                        .enumerated()
+                        .map {
+                            (
+                                $0.element
+                                    .window
+                                    .windowID,
+                                $0.offset
+                            )
+                        }
+            )
+
+        for overlay
+            in session
+                .overlays {
+            guard
+                let index =
+                    indexByWindowID[
+                        overlay
+                            .target
+                            .window
+                            .windowID
+                    ]
+            else {
+                continue
+            }
+
+            let frontFrames =
+                realWindows
+                    .prefix(
+                        index
+                    )
+                    .map {
+                        $0.window
+                            .appKitFrame
+                    }
+
+            overlay
+                .view
+                .setOcclusionMask(
+                    windowFrame:
+                        overlay
+                            .target
+                            .window
+                            .appKitFrame,
+                    frontWindowFrames:
+                        frontFrames
+                )
+        }
     }
 
     private func topmostRealAppPID(
@@ -3584,9 +3974,21 @@ final class AppDelegate:
                 - restingOpacity
             )
 
-        let hoverCoverAlpha:
-            CGFloat =
-                0.70
+        let hoverContentOpacity =
+            min(
+                0.70,
+                max(
+                    0.30,
+                    restingOpacity
+                    + 0.20
+                )
+            )
+
+        let hoverCoverAlpha =
+            CGFloat(
+                1
+                - hoverContentOpacity
+            )
 
         NSAnimationContext
             .runAnimationGroup {
@@ -4196,6 +4598,34 @@ final class AppDelegate:
                 .activate(
                     options: []
                 )
+
+        DispatchQueue
+            .main
+            .asyncAfter(
+                deadline:
+                    .now()
+                    + 0.06
+            ) {
+                [weak self,
+                 weak current]
+                in
+
+                guard
+                    let self,
+                    let current,
+                    self
+                        .session
+                        === current
+                else {
+                    return
+                }
+
+                self
+                    .applyLayerOcclusion(
+                        session:
+                            current
+                    )
+            }
 
         NSAnimationContext
             .runAnimationGroup {
