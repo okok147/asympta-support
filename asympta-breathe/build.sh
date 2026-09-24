@@ -45,8 +45,8 @@ cat > "$CONTENTS/Info.plist" <<'PLIST'
   <key>CFBundleInfoDictionaryVersion</key><string>6.0</string>
   <key>CFBundleName</key><string>Asympta Breathe</string>
   <key>CFBundlePackageType</key><string>APPL</string>
-  <key>CFBundleShortVersionString</key><string>1.4.1</string>
-  <key>CFBundleVersion</key><string>41</string>
+  <key>CFBundleShortVersionString</key><string>1.5.0</string>
+  <key>CFBundleVersion</key><string>50</string>
   <key>LSMinimumSystemVersion</key><string>14.0</string>
   <key>LSUIElement</key><true/>
   <key>NSHighResolutionCapable</key><true/>
@@ -178,6 +178,6 @@ codesign --verify --deep --strict --verbose=2 "$APP"
 plutil -lint "$CONTENTS/Info.plist"
 
 mkdir -p "$OUT/package"
-ditto -c -k --sequesterRsrc --keepParent "$APP" "$OUT/package/Asympta-Breathe-1.4.1.zip"
+ditto -c -k --sequesterRsrc --keepParent "$APP" "$OUT/package/Asympta-Breathe-1.5.0.zip"
 
-echo "Built $OUT/package/Asympta-Breathe-1.4.1.zip"
+echo "Built $OUT/package/Asympta-Breathe-1.5.0.zip"
