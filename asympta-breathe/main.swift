@@ -4007,6 +4007,21 @@ final class AppDelegate:
                 pid
             )
 
+        if let targetApp =
+            overlays
+                .first?
+                .target
+                .app {
+            // Selection invariant:
+            // clicking a resting app must make that exact app the foreground app,
+            // not merely remove its Breathe overlay.
+            _ =
+                targetApp
+                    .activate(
+                        options: []
+                    )
+        }
+
         if let hoveredID =
             current
                 .hoveredWindowID,
@@ -4111,6 +4126,20 @@ final class AppDelegate:
                         .insert(
                             pid
                         )
+
+                    if let targetApp =
+                        overlays
+                            .first?
+                            .target
+                            .app {
+                        // Reassert activation after the high-level overlay panels
+                        // have been removed so the selected app remains in front.
+                        _ =
+                            targetApp
+                                .activate(
+                                    options: []
+                                )
+                    }
 
                     if current
                         .remainingPIDs
