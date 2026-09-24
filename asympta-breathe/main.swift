@@ -34,6 +34,7 @@ private struct PreparedOverlay {
     let scWindow: SCWindow
     let scale: CGFloat
     let backgroundImage: CGImage
+    let contentImage: CGImage
     let borderImage: CGImage?
 }
 
@@ -384,6 +385,9 @@ private final class BreathOverlayView:
     let coverImageView =
         NSImageView()
 
+    let contentImageView =
+        NSImageView()
+
     let textImageView =
         NSImageView()
 
@@ -410,6 +414,7 @@ private final class BreathOverlayView:
         for imageView
             in [
                 coverImageView,
+                contentImageView,
                 textImageView,
                 borderImageView
             ] {
@@ -439,9 +444,15 @@ private final class BreathOverlayView:
             )
         }
 
+        // Back layer is always present. The front app-content layer
+        // breathes between resting opacity and full opacity.
         coverImageView
             .alphaValue =
-                0
+                1
+
+        contentImageView
+            .alphaValue =
+                1
 
         textImageView
             .alphaValue =
@@ -468,6 +479,8 @@ private final class BreathOverlayView:
     func install(
         background:
             CGImage,
+        content:
+            CGImage,
         border:
             CGImage?
     ) {
@@ -475,6 +488,14 @@ private final class BreathOverlayView:
             NSImage(
                 cgImage:
                     background,
+                size:
+                    bounds.size
+            )
+
+        contentImageView.image =
+            NSImage(
+                cgImage:
+                    content,
                 size:
                     bounds.size
             )
@@ -491,6 +512,19 @@ private final class BreathOverlayView:
             borderImageView.image =
                 nil
         }
+    }
+
+    func setContentImage(
+        _ image:
+            CGImage
+    ) {
+        contentImageView.image =
+            NSImage(
+                cgImage:
+                    image,
+                size:
+                    bounds.size
+            )
     }
 
     func setTextReveal(
@@ -1747,12 +1781,6 @@ final class AppDelegate:
                         session
                 )
 
-                let restingCover =
-                    CGFloat(
-                        1
-                        - restingOpacity
-                    )
-
                 for overlay
                     in session
                         .overlays {
@@ -1774,9 +1802,11 @@ final class AppDelegate:
 
                     overlay
                         .view
-                        .coverImageView
+                        .contentImageView
                         .alphaValue =
-                            restingCover
+                            CGFloat(
+                                restingOpacity
+                            )
                 }
             }
 
@@ -3106,14 +3136,30 @@ final class AppDelegate:
                             continue
                         }
 
+                        guard
+                            let content =
+                                try? await self
+                                    .captureWindowImage(
+                                        target:
+                                            target,
+                                        scWindow:
+                                            scWindow
+                                    )
+                        else {
+                            continue
+                        }
+
                         let border =
-                            try? await self
-                                .captureBorderImage(
-                                    target:
-                                        target,
-                                    scWindow:
-                                        scWindow
-                                )
+                            makeAlphaEdgeImage(
+                                from:
+                                    content,
+                                color:
+                                    stableAppColor(
+                                        bundleID:
+                                            target
+                                                .bundleID
+                                    )
+                            )
 
                         prepared.append(
                             PreparedOverlay(
@@ -3130,6 +3176,8 @@ final class AppDelegate:
                                     ),
                                 backgroundImage:
                                     background,
+                                contentImage:
+                                    content,
                                 borderImage:
                                     border
                             )
@@ -3360,13 +3408,13 @@ final class AppDelegate:
                     )
     }
 
-    private func captureBorderImage(
+    private func captureWindowImage(
         target:
             VisibleWindowTarget,
         scWindow:
             SCWindow
     ) async throws
-        -> CGImage? {
+        -> CGImage {
         let frame =
             target
                 .window
@@ -3419,7 +3467,7 @@ final class AppDelegate:
         config.ignoreShadowsSingleWindow =
             true
 
-        let image =
+        return
             try await
                 SCScreenshotManager
                     .captureImage(
@@ -3428,18 +3476,6 @@ final class AppDelegate:
                         configuration:
                             config
                     )
-
-        return
-            makeAlphaEdgeImage(
-                from:
-                    image,
-                color:
-                    stableAppColor(
-                        bundleID:
-                            target
-                                .bundleID
-                    )
-            )
     }
 
     private func presentBreatheOut(
@@ -3522,6 +3558,9 @@ final class AppDelegate:
                 background:
                     item
                         .backgroundImage,
+                content:
+                    item
+                        .contentImage,
                 border:
                     item
                         .borderImage
@@ -3588,10 +3627,6 @@ final class AppDelegate:
                 newSession
         )
 
-        let coverAlpha =
-            1
-            - restingOpacity
-
         NSAnimationContext
             .runAnimationGroup {
                 context in
@@ -3616,11 +3651,11 @@ final class AppDelegate:
                     in overlays {
                     overlay
                         .view
-                        .coverImageView
+                        .contentImageView
                         .animator()
                         .alphaValue =
                             CGFloat(
-                                coverAlpha
+                                restingOpacity
                             )
 
                     overlay
@@ -3968,12 +4003,6 @@ final class AppDelegate:
             .hoveredWindowID =
                 newHoveredWindowID
 
-        let restingCoverAlpha =
-            CGFloat(
-                1
-                - restingOpacity
-            )
-
         let hoverContentOpacity =
             min(
                 0.70,
@@ -3982,12 +4011,6 @@ final class AppDelegate:
                     restingOpacity
                     + 0.20
                 )
-            )
-
-        let hoverCoverAlpha =
-            CGFloat(
-                1
-                - hoverContentOpacity
             )
 
         NSAnimationContext
@@ -4039,12 +4062,14 @@ final class AppDelegate:
 
                     overlay
                         .view
-                        .coverImageView
+                        .contentImageView
                         .animator()
                         .alphaValue =
-                            isHovered
-                            ? hoverCoverAlpha
-                            : restingCoverAlpha
+                            CGFloat(
+                                isHovered
+                                ? hoverContentOpacity
+                                : restingOpacity
+                            )
 
                     overlay
                         .view
@@ -4321,6 +4346,12 @@ final class AppDelegate:
                         * overlay.scale
                 )
 
+            overlay
+                .view
+                .setContentImage(
+                    image
+                )
+
             let textOnly =
                 makeTextOnlyImage(
                     from:
@@ -4585,7 +4616,8 @@ final class AppDelegate:
                 .orderFrontRegardless()
 
             // Selection no longer needs the resting outline.
-            // Remove the border immediately; only the dimming cover breathes away.
+            // Remove the border immediately. The front app-content layer now
+            // breathes from resting opacity back to full opacity.
             overlay
                 .view
                 .borderImageView
@@ -4652,17 +4684,16 @@ final class AppDelegate:
                     in overlays {
                     overlay
                         .view
-                        .coverImageView
-                        .animator()
-                        .alphaValue =
-                            0
+                        .textImageView
+                        .isHidden =
+                            true
 
                     overlay
                         .view
-                        .textImageView
+                        .contentImageView
                         .animator()
                         .alphaValue =
-                            0
+                            1
                 }
             } completionHandler: {
                 [weak self,
