@@ -654,6 +654,9 @@ private final class PermissionGateController:
                 nil
         )
 
+    private var didRequestNativePrompt =
+        false
+
     private var activationObserver:
         NSObjectProtocol?
 
@@ -930,8 +933,8 @@ private final class PermissionGateController:
             bodyLabel
                 .stringValue =
                     "Breathe needs Screen Recording to reproduce the desktop behind each app. "
-                    + "Click Approve to open Privacy & Security, then enable Asympta Breathe. "
-                    + "If macOS asks you to reopen the app, reopen it — this step will not reset again."
+                    + "Click Approve once. macOS will register Asympta Breathe and show its Screen Recording permission dialog. "
+                    + "Choose Open System Settings, enable the app, then reopen it if macOS asks."
 
             statusLabel
                 .stringValue =
@@ -952,7 +955,8 @@ private final class PermissionGateController:
             bodyLabel
                 .stringValue =
                     "Accessibility lets Breathe identify the focused text field and preserve live typing. "
-                    + "Click Approve to open Privacy & Security, then enable Asympta Breathe."
+                    + "After Screen Recording is ready, click Approve once. macOS will register Asympta Breathe under Accessibility. "
+                    + "Choose Open System Settings, then enable the app."
 
             statusLabel
                 .stringValue =
@@ -1007,31 +1011,78 @@ private final class PermissionGateController:
             .isEnabled =
                 false
 
+        if didRequestNativePrompt {
+            switch step {
+            case .screenRecording:
+                openPrivacyPane(
+                    "Privacy_ScreenCapture"
+                )
+
+            case .accessibility:
+                openPrivacyPane(
+                    "Privacy_Accessibility"
+                )
+            }
+
+            approveButton
+                .isEnabled =
+                    true
+
+            return
+        }
+
+        didRequestNativePrompt =
+            true
+
         switch step {
         case .screenRecording:
             statusLabel
                 .stringValue =
-                    "Privacy & Security is opening. Enable Asympta Breathe under Screen Recording. "
-                    + "If macOS asks you to reopen the app, reopen it."
+                    "macOS is registering Asympta Breathe for Screen Recording. "
+                    + "Choose Open System Settings in the macOS dialog, then enable the app."
 
-            // Do NOT call CGRequestScreenCaptureAccess() here.
-            // That API creates a second native permission dialog.
-            // The onboarding flow intentionally uses only the System Settings
-            // pane so there is one obvious action for the user.
-            openPrivacyPane(
-                "Privacy_ScreenCapture"
-            )
+            // This native request is required for macOS to register the app
+            // in Privacy & Security → Screen Recording.
+            let granted =
+                CGRequestScreenCaptureAccess()
+
+            if granted {
+                onPermissionStateMayHaveChanged?()
+                return
+            }
+
+            approveButton.title =
+                "Open Screen Recording Settings"
 
         case .accessibility:
             statusLabel
                 .stringValue =
-                    "Privacy & Security is opening. Enable Asympta Breathe under Accessibility."
+                    "macOS is registering Asympta Breathe for Accessibility. "
+                    + "Choose Open System Settings in the macOS dialog, then enable the app."
 
-            // Do NOT call AXIsProcessTrustedWithOptions(prompt: true).
-            // That creates another native prompt in addition to System Settings.
-            openPrivacyPane(
-                "Privacy_Accessibility"
-            )
+            // This native request is required for macOS to register the app
+            // in Privacy & Security → Accessibility.
+            let key =
+                kAXTrustedCheckOptionPrompt
+                    .takeUnretainedValue()
+                as String
+
+            let options =
+                [key: true]
+                as CFDictionary
+
+            _ =
+                AXIsProcessTrustedWithOptions(
+                    options
+                )
+
+            if AXIsProcessTrusted() {
+                onPermissionStateMayHaveChanged?()
+                return
+            }
+
+            approveButton.title =
+                "Open Accessibility Settings"
         }
 
         DispatchQueue
