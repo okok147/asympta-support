@@ -135,6 +135,8 @@ private func makeAlphaEdgeImage(
         cgImage: image
     )
 
+    // Convert the source alpha into a grayscale mask first.
+    // R/G/B/A all contain the original window alpha.
     let alphaVector =
         CIVector(
             x: 0,
@@ -147,22 +149,19 @@ private func makeAlphaEdgeImage(
         input.applyingFilter(
             "CIColorMatrix",
             parameters: [
-                "inputRVector":
-                    alphaVector,
-                "inputGVector":
-                    alphaVector,
-                "inputBVector":
-                    alphaVector,
-                "inputAVector":
-                    alphaVector
+                "inputRVector": alphaVector,
+                "inputGVector": alphaVector,
+                "inputBVector": alphaVector,
+                "inputAVector": alphaVector
             ]
         )
 
+    // Extract only the actual window silhouette edge.
     let edge =
         alphaImage.applyingFilter(
             "CIMorphologyGradient",
             parameters: [
-                "inputRadius": 2.2
+                "inputRadius": 1.35
             ]
         )
 
@@ -172,6 +171,10 @@ private func makeAlphaEdgeImage(
         )
         ?? color
 
+    // IMPORTANT:
+    // The alpha of the border must come from edge intensity (edge.R),
+    // not the original window alpha. Otherwise the whole rectangular
+    // border image becomes opaque black over the faded app.
     let tinted =
         edge.applyingFilter(
             "CIColorMatrix",
@@ -185,24 +188,24 @@ private func makeAlphaEdgeImage(
                     ),
                 "inputGVector":
                     CIVector(
-                        x: 0,
-                        y: rgb.greenComponent,
+                        x: rgb.greenComponent,
+                        y: 0,
                         z: 0,
                         w: 0
                     ),
                 "inputBVector":
                     CIVector(
-                        x: 0,
+                        x: rgb.blueComponent,
                         y: 0,
-                        z: rgb.blueComponent,
+                        z: 0,
                         w: 0
                     ),
                 "inputAVector":
                     CIVector(
-                        x: 0,
+                        x: 0.72,
                         y: 0,
                         z: 0,
-                        w: 1
+                        w: 0
                     )
             ]
         )
