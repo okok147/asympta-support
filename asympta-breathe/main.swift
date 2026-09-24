@@ -105,28 +105,62 @@ private final class FadeSession {
     }
 }
 
+private func verifyScreenCaptureCapability(
+    forceProbe: Bool
+) async -> Bool {
+    if !forceProbe && !CGPreflightScreenCaptureAccess() {
+        return false
+    }
+
+    do {
+        _ = try await SCShareableContent.excludingDesktopWindows(
+            false,
+            onScreenWindowsOnly: true
+        )
+        return true
+    } catch {
+        return false
+    }
+}
+
 @MainActor
 private final class PermissionGateController: NSWindowController {
-    var onReady: (() -> Void)?
+    var onReady: ((Bool, Bool) -> Void)?
 
     private let screenIcon = NSImageView()
-    private let screenStatus = NSTextField(labelWithString: "Not allowed")
+    private let screenStatus = NSTextField(labelWithString: "Checking…")
     private let screenButton = NSButton(title: "Allow", target: nil, action: nil)
 
     private let accessibilityIcon = NSImageView()
-    private let accessibilityStatus = NSTextField(labelWithString: "Not allowed")
+    private let accessibilityStatus = NSTextField(labelWithString: "Checking…")
     private let accessibilityButton = NSButton(title: "Allow", target: nil, action: nil)
 
+    private let refreshButton = NSButton(
+        title: "Refresh Permissions",
+        target: nil,
+        action: nil
+    )
+
     private let footerStatus = NSTextField(
-        labelWithString: "Both permissions are required before Asympta Breathe can start."
+        labelWithString:
+            "Both permissions must be verified before Asympta Breathe can start."
     )
 
     private var pollTimer: Timer?
     private var didDeliverReady = false
+    private var refreshInProgress = false
+
+    private var screenVerified = false
+    private var accessibilityVerified = false
 
     init() {
         let window = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 520, height: 350),
+            contentRect: NSRect(
+                x: 0,
+                y: 0,
+                width: 540,
+                height: 390
+            ),
             styleMask: [.titled],
             backing: .buffered,
             defer: false
@@ -160,14 +194,17 @@ private final class PermissionGateController: NSWindowController {
         guard let contentView = window?.contentView else { return }
 
         let title = NSTextField(
-            labelWithString: "Two permissions are required"
+            labelWithString: "Permissions"
         )
-        title.font = .systemFont(ofSize: 24, weight: .semibold)
+        title.font = .systemFont(
+            ofSize: 24,
+            weight: .semibold
+        )
 
         let subtitle = NSTextField(
             wrappingLabelWithString:
-                "Asympta Breathe only starts after macOS confirms both permissions. "
-                + "The window updates automatically as soon as you approve them."
+                "Asympta Breathe verifies both permissions before starting. "
+                + "This page refreshes automatically; you can also verify them immediately."
         )
         subtitle.textColor = .secondaryLabelColor
         subtitle.font = .systemFont(ofSize: 13)
@@ -175,7 +212,9 @@ private final class PermissionGateController: NSWindowController {
         let screenRow = permissionRow(
             symbol: "rectangle.inset.filled.and.person.filled",
             title: "Screen Recording",
-            detail: "Needed to render the real shape and contents of visible app windows.",
+            detail:
+                "Verified with a real ScreenCaptureKit access probe, "
+                + "not only the cached permission flag.",
             icon: screenIcon,
             status: screenStatus,
             button: screenButton,
@@ -185,14 +224,23 @@ private final class PermissionGateController: NSWindowController {
         let accessibilityRow = permissionRow(
             symbol: "hand.raised.fill",
             title: "Accessibility",
-            detail: "Needed to move and restore the original app windows without closing them.",
+            detail:
+                "Verified directly with AXIsProcessTrusted().",
             icon: accessibilityIcon,
             status: accessibilityStatus,
             button: accessibilityButton,
             action: #selector(allowAccessibility)
         )
 
-        footerStatus.font = .systemFont(ofSize: 12, weight: .medium)
+        refreshButton.target = self
+        refreshButton.action = #selector(refreshNow)
+        refreshButton.bezelStyle = .rounded
+        refreshButton.keyEquivalent = "\r"
+
+        footerStatus.font = .systemFont(
+            ofSize: 12,
+            weight: .medium
+        )
         footerStatus.textColor = .secondaryLabelColor
 
         let quit = NSButton(
@@ -202,24 +250,29 @@ private final class PermissionGateController: NSWindowController {
         )
         quit.bezelStyle = .rounded
 
-        let footer = NSStackView(views: [
-            footerStatus,
-            NSView(),
-            quit
-        ])
+        let footer = NSStackView(
+            views: [
+                footerStatus,
+                NSView(),
+                refreshButton,
+                quit
+            ]
+        )
         footer.orientation = .horizontal
         footer.alignment = .centerY
         footer.spacing = 10
 
-        let stack = NSStackView(views: [
-            title,
-            subtitle,
-            separator(),
-            screenRow,
-            accessibilityRow,
-            separator(),
-            footer
-        ])
+        let stack = NSStackView(
+            views: [
+                title,
+                subtitle,
+                separator(),
+                screenRow,
+                accessibilityRow,
+                separator(),
+                footer
+            ]
+        )
         stack.orientation = .vertical
         stack.alignment = .leading
         stack.spacing = 16
@@ -244,13 +297,25 @@ private final class PermissionGateController: NSWindowController {
                 lessThanOrEqualTo: contentView.bottomAnchor,
                 constant: -22
             ),
-            subtitle.widthAnchor.constraint(equalTo: stack.widthAnchor),
-            screenRow.widthAnchor.constraint(equalTo: stack.widthAnchor),
-            accessibilityRow.widthAnchor.constraint(equalTo: stack.widthAnchor),
-            footer.widthAnchor.constraint(equalTo: stack.widthAnchor)
+            subtitle.widthAnchor.constraint(
+                equalTo: stack.widthAnchor
+            ),
+            screenRow.widthAnchor.constraint(
+                equalTo: stack.widthAnchor
+            ),
+            accessibilityRow.widthAnchor.constraint(
+                equalTo: stack.widthAnchor
+            ),
+            footer.widthAnchor.constraint(
+                equalTo: stack.widthAnchor
+            )
         ])
 
-        refresh()
+        Task { [weak self] in
+            await self?.refresh(
+                forceScreenProbe: false
+            )
+        }
     }
 
     private func permissionRow(
@@ -266,25 +331,38 @@ private final class PermissionGateController: NSWindowController {
             systemSymbolName: symbol,
             accessibilityDescription: title
         )
-        icon.symbolConfiguration = NSImage.SymbolConfiguration(
-            pointSize: 19,
-            weight: .medium
-        )
+        icon.symbolConfiguration =
+            NSImage.SymbolConfiguration(
+                pointSize: 19,
+                weight: .medium
+            )
         icon.translatesAutoresizingMaskIntoConstraints = false
 
-        let titleField = NSTextField(labelWithString: title)
-        titleField.font = .systemFont(ofSize: 15, weight: .semibold)
-
-        let detailField = NSTextField(
-            wrappingLabelWithString: detail
+        let titleField =
+            NSTextField(labelWithString: title)
+        titleField.font = .systemFont(
+            ofSize: 15,
+            weight: .semibold
         )
+
+        let detailField =
+            NSTextField(
+                wrappingLabelWithString: detail
+            )
         detailField.textColor = .secondaryLabelColor
         detailField.font = .systemFont(ofSize: 12)
 
-        status.font = .systemFont(ofSize: 12, weight: .medium)
+        status.font = .systemFont(
+            ofSize: 12,
+            weight: .medium
+        )
 
         let textStack = NSStackView(
-            views: [titleField, detailField, status]
+            views: [
+                titleField,
+                detailField,
+                status
+            ]
         )
         textStack.orientation = .vertical
         textStack.alignment = .leading
@@ -295,16 +373,27 @@ private final class PermissionGateController: NSWindowController {
         button.bezelStyle = .rounded
 
         let row = NSStackView(
-            views: [icon, textStack, NSView(), button]
+            views: [
+                icon,
+                textStack,
+                NSView(),
+                button
+            ]
         )
         row.orientation = .horizontal
         row.alignment = .centerY
         row.spacing = 12
 
         NSLayoutConstraint.activate([
-            icon.widthAnchor.constraint(equalToConstant: 28),
-            icon.heightAnchor.constraint(equalToConstant: 28),
-            button.widthAnchor.constraint(greaterThanOrEqualToConstant: 78)
+            icon.widthAnchor.constraint(
+                equalToConstant: 28
+            ),
+            icon.heightAnchor.constraint(
+                equalToConstant: 28
+            ),
+            button.widthAnchor.constraint(
+                greaterThanOrEqualToConstant: 82
+            )
         ])
 
         return row
@@ -318,36 +407,73 @@ private final class PermissionGateController: NSWindowController {
 
     private func startMonitoring() {
         pollTimer = Timer.scheduledTimer(
-            withTimeInterval: 0.35,
+            withTimeInterval: 0.50,
             repeats: true
         ) { [weak self] _ in
             Task { @MainActor in
-                self?.refresh()
+                await self?.refresh(
+                    forceScreenProbe: false
+                )
             }
         }
     }
 
-    private func refresh() {
-        let screenAllowed = CGPreflightScreenCaptureAccess()
-        let accessibilityAllowed = AXIsProcessTrusted()
+    private func refresh(
+        forceScreenProbe: Bool
+    ) async {
+        guard !refreshInProgress else { return }
+        refreshInProgress = true
+
+        refreshButton.isEnabled = false
+
+        accessibilityStatus.stringValue = "Checking…"
+        screenStatus.stringValue =
+            forceScreenProbe
+            ? "Verifying capture access…"
+            : "Checking…"
+
+        let accessibilityAllowed =
+            AXIsProcessTrusted()
+
+        let screenAllowed: Bool
+
+        if CGPreflightScreenCaptureAccess() {
+            screenAllowed =
+                await verifyScreenCaptureCapability(
+                    forceProbe: true
+                )
+        } else if forceScreenProbe {
+            screenAllowed =
+                await verifyScreenCaptureCapability(
+                    forceProbe: true
+                )
+        } else {
+            screenAllowed = false
+        }
+
+        screenVerified = screenAllowed
+        accessibilityVerified = accessibilityAllowed
 
         updatePermission(
-            allowed: screenAllowed,
+            allowed: screenVerified,
             icon: screenIcon,
             status: screenStatus,
             button: screenButton
         )
 
         updatePermission(
-            allowed: accessibilityAllowed,
+            allowed: accessibilityVerified,
             icon: accessibilityIcon,
             status: accessibilityStatus,
             button: accessibilityButton
         )
 
-        if screenAllowed && accessibilityAllowed {
+        refreshInProgress = false
+        refreshButton.isEnabled = true
+
+        if screenVerified && accessibilityVerified {
             footerStatus.stringValue =
-                "Ready. Opening Asympta Breathe…"
+                "Verified. Opening Asympta Breathe…"
             footerStatus.textColor = .systemGreen
 
             guard !didDeliverReady else { return }
@@ -357,14 +483,20 @@ private final class PermissionGateController: NSWindowController {
             pollTimer = nil
 
             DispatchQueue.main.asyncAfter(
-                deadline: .now() + 0.35
+                deadline: .now() + 0.25
             ) { [weak self] in
-                self?.onReady?()
+                guard let self else { return }
+
+                self.onReady?(
+                    self.screenVerified,
+                    self.accessibilityVerified
+                )
             }
         } else {
             footerStatus.stringValue =
-                "Both permissions are required before Asympta Breathe can start."
-            footerStatus.textColor = .secondaryLabelColor
+                "Both permissions must be verified before Asympta Breathe can start."
+            footerStatus.textColor =
+                .secondaryLabelColor
         }
     }
 
@@ -376,32 +508,47 @@ private final class PermissionGateController: NSWindowController {
     ) {
         if allowed {
             icon.contentTintColor = .systemGreen
-            status.stringValue = "Allowed"
+            status.stringValue = "Verified"
             status.textColor = .systemGreen
             button.title = "Allowed"
             button.isEnabled = false
         } else {
             icon.contentTintColor = .secondaryLabelColor
-            status.stringValue = "Not allowed"
+            status.stringValue = "Not verified"
             status.textColor = .secondaryLabelColor
             button.title = "Allow"
             button.isEnabled = true
         }
     }
 
+    @objc private func refreshNow() {
+        Task { [weak self] in
+            await self?.refresh(
+                forceScreenProbe: true
+            )
+        }
+    }
+
     @objc private func allowScreenRecording() {
         if !CGPreflightScreenCaptureAccess() {
-            let granted = CGRequestScreenCaptureAccess()
+            let granted =
+                CGRequestScreenCaptureAccess()
 
             if !granted {
-                openPrivacyPane("Privacy_ScreenCapture")
+                openPrivacyPane(
+                    "Privacy_ScreenCapture"
+                )
             }
         }
 
         DispatchQueue.main.asyncAfter(
-            deadline: .now() + 0.25
+            deadline: .now() + 0.35
         ) { [weak self] in
-            self?.refresh()
+            Task { @MainActor in
+                await self?.refresh(
+                    forceScreenProbe: true
+                )
+            }
         }
     }
 
@@ -409,11 +556,15 @@ private final class PermissionGateController: NSWindowController {
         let key =
             kAXTrustedCheckOptionPrompt
                 .takeUnretainedValue() as String
-        let options = [key: true] as CFDictionary
-        _ = AXIsProcessTrustedWithOptions(options)
+        let options =
+            [key: true] as CFDictionary
+
+        _ = AXIsProcessTrustedWithOptions(
+            options
+        )
 
         DispatchQueue.main.asyncAfter(
-            deadline: .now() + 0.6
+            deadline: .now() + 0.45
         ) { [weak self] in
             guard let self else { return }
 
@@ -423,11 +574,17 @@ private final class PermissionGateController: NSWindowController {
                 )
             }
 
-            self.refresh()
+            Task { @MainActor in
+                await self.refresh(
+                    forceScreenProbe: false
+                )
+            }
         }
     }
 
-    private func openPrivacyPane(_ anchor: String) {
+    private func openPrivacyPane(
+        _ anchor: String
+    ) {
         guard
             let url = URL(
                 string:
@@ -502,14 +659,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private let inhaleSeconds = 0.72
 
     func applicationDidFinishLaunching(_ notification: Notification) {
-        screenPermission = CGPreflightScreenCaptureAccess()
-        accessibilityPermission = AXIsProcessTrusted()
-
-        if screenPermission && accessibilityPermission {
-            enterMainMode()
-        } else {
-            showPermissionGate()
-        }
+        screenPermission = false
+        accessibilityPermission = false
+        showPermissionGate()
     }
 
     func applicationWillTerminate(_ notification: Notification) {
@@ -541,7 +693,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         NSApp.setActivationPolicy(.regular)
 
         let gate = PermissionGateController()
-        gate.onReady = { [weak self, weak gate] in
+        gate.onReady = {
+            [weak self, weak gate]
+            screenVerified,
+            accessibilityVerified
+            in
+
             Task { @MainActor in
                 guard let self else { return }
 
@@ -551,12 +708,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     self.permissionGate = nil
                 }
 
-                self.screenPermission =
-                    CGPreflightScreenCaptureAccess()
-                self.accessibilityPermission =
-                    AXIsProcessTrusted()
-
-                self.enterMainMode()
+                self.enterMainMode(
+                    screenVerified: screenVerified,
+                    accessibilityVerified:
+                        accessibilityVerified
+                )
             }
         }
 
@@ -566,11 +722,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         _ = NSRunningApplication.current.activate(options: [])
     }
 
-    private func enterMainMode() {
-        screenPermission = CGPreflightScreenCaptureAccess()
-        accessibilityPermission = AXIsProcessTrusted()
+    private func enterMainMode(
+        screenVerified: Bool,
+        accessibilityVerified: Bool
+    ) {
+        screenPermission =
+            screenVerified
+            || CGPreflightScreenCaptureAccess()
+        accessibilityPermission =
+            accessibilityVerified
+            || AXIsProcessTrusted()
 
-        guard screenPermission && accessibilityPermission else {
+        guard
+            screenPermission,
+            accessibilityPermission
+        else {
             showPermissionGate()
             return
         }
@@ -618,23 +784,33 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func refreshPermissions() {
-        let newScreen = CGPreflightScreenCaptureAccess()
-        let newAccessibility = AXIsProcessTrusted()
+        let preflightScreen =
+            CGPreflightScreenCaptureAccess()
+        let newAccessibility =
+            AXIsProcessTrusted()
 
-        let changed =
-            newScreen != screenPermission
-            || newAccessibility != accessibilityPermission
+        let oldScreen = screenPermission
+        let oldAccessibility =
+            accessibilityPermission
 
-        screenPermission = newScreen
-        accessibilityPermission = newAccessibility
+        if preflightScreen {
+            screenPermission = true
+        }
+
+        accessibilityPermission =
+            newAccessibility
 
         if mainStarted
-            && (!screenPermission || !accessibilityPermission) {
+            && !accessibilityPermission {
             showPermissionGate()
             return
         }
 
-        if changed && statusItem != nil {
+        if (
+            oldScreen != screenPermission
+            || oldAccessibility
+                != accessibilityPermission
+        ) && statusItem != nil {
             rebuildMenu()
         }
     }
@@ -1034,7 +1210,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
             } catch {
                 self.captureTask = nil
-                self.rebuildMenu()
+
+                if !CGPreflightScreenCaptureAccess() {
+                    self.screenPermission = false
+                    self.showPermissionGate()
+                } else {
+                    self.rebuildMenu()
+                }
             }
         }
     }
