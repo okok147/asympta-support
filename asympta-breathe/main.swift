@@ -56,7 +56,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var wakeArmedAt: TimeInterval = 0
     private var lastExternalPID: pid_t?
     private var lastExternalAppName: String?
-    private var lastMenuRefreshSecond = -1
 
     private var enabled: Bool {
         get {
@@ -166,10 +165,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         } else if session != nil {
             statusText = "Breathing out"
         } else if let appName = currentExternalAppName() ?? lastExternalAppName {
-            let remaining = max(0, idleSeconds - (ProcessInfo.processInfo.systemUptime - lastActivityAt))
-            statusText = enabled
-                ? "Watching · \(appName) · \(String(format: "%.1f", remaining))s"
-                : "Disabled"
+            statusText = enabled ? "Watching · \(appName)" : "Disabled"
         } else {
             statusText = enabled ? "Waiting for an app" : "Disabled"
         }
@@ -372,14 +368,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         let now = ProcessInfo.processInfo.systemUptime
         let idleFor = now - lastActivityAt
-
-        let second = Int(idleFor * 2)
-        if second != lastMenuRefreshSecond {
-            lastMenuRefreshSecond = second
-            if menu?.isAttached == true {
-                rebuildMenu()
-            }
-        }
 
         guard idleFor >= idleSeconds else { return }
         guard let target = currentFrontmostTarget() else { return }
