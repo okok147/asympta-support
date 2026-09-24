@@ -4,14 +4,22 @@ import CoreGraphics
 import QuartzCore
 
 private let appBundleID = "com.asympta.breathe"
-private let anyInputEvent = CGEventType(rawValue: UInt32.max)!
 
 private struct TargetWindow {
-    let app: NSRunningApplication
     let windowID: CGWindowID
     let cgFrame: CGRect
     let appKitFrame: CGRect
+}
+
+private struct AppTarget {
+    let app: NSRunningApplication
+    let windows: [TargetWindow]
     let appName: String
+}
+
+private struct CapturedWindow {
+    let target: TargetWindow
+    let image: CGImage
 }
 
 private final class WakePanel: NSPanel {
@@ -21,16 +29,14 @@ private final class WakePanel: NSPanel {
 
 @MainActor
 private final class FadeSession {
-    let target: TargetWindow
-    let imagePanel: NSPanel
-    let shieldPanel: WakePanel
-    let startedAt: TimeInterval
+    let target: AppTarget
+    let imagePanels: [NSPanel]
+    let shieldPanels: [WakePanel]
 
-    init(target: TargetWindow, imagePanel: NSPanel, shieldPanel: WakePanel) {
+    init(target: AppTarget, imagePanels: [NSPanel], shieldPanels: [WakePanel]) {
         self.target = target
-        self.imagePanel = imagePanel
-        self.shieldPanel = shieldPanel
-        self.startedAt = ProcessInfo.processInfo.systemUptime
+        self.imagePanels = imagePanels
+        self.shieldPanels = shieldPanels
     }
 }
 
@@ -38,13 +44,19 @@ private final class FadeSession {
 final class AppDelegate: NSObject, NSApplicationDelegate {
     private var statusItem: NSStatusItem!
     private var menu: NSMenu!
-    private var timer: Timer?
+    private var tickTimer: Timer?
+    private var globalMonitor: Any?
     private var localMonitor: Any?
+    private var workspaceObserver: NSObjectProtocol?
+
     private var session: FadeSession?
     private var captureTask: Task<Void, Never>?
-    private var lastEligibleTarget: TargetWindow?
+
+    private var lastActivityAt = ProcessInfo.processInfo.systemUptime
     private var wakeArmedAt: TimeInterval = 0
-    private var isLaunching = true
+    private var lastExternalPID: pid_t?
+    private var lastExternalAppName: String?
+    private var lastMenuRefreshSecond = -1
 
     private var enabled: Bool {
         get {
@@ -54,25 +66,27 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         set {
             UserDefaults.standard.set(newValue, forKey: "enabled")
             if !newValue { restoreNow() }
+            lastActivityAt = ProcessInfo.processInfo.systemUptime
             rebuildMenu()
         }
     }
 
     private var idleSeconds: Double {
         get {
-            let v = UserDefaults.standard.double(forKey: "idleSeconds")
-            return v > 0 ? v : 4
+            let value = UserDefaults.standard.double(forKey: "idleSeconds")
+            return value > 0 ? value : 4
         }
         set {
             UserDefaults.standard.set(newValue, forKey: "idleSeconds")
+            lastActivityAt = ProcessInfo.processInfo.systemUptime
             rebuildMenu()
         }
     }
 
     private var fadeSeconds: Double {
         get {
-            let v = UserDefaults.standard.double(forKey: "fadeSeconds")
-            return v > 0 ? v : 9
+            let value = UserDefaults.standard.double(forKey: "fadeSeconds")
+            return value > 0 ? value : 9
         }
         set {
             UserDefaults.standard.set(newValue, forKey: "fadeSeconds")
@@ -82,18 +96,25 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.accessory)
-        buildStatusItem()
-        installLocalWakeMonitor()
 
-        timer = Timer.scheduledTimer(withTimeInterval: 0.10, repeats: true) { [weak self] _ in
+        if let app = NSWorkspace.shared.frontmostApplication,
+           app.processIdentifier != ProcessInfo.processInfo.processIdentifier {
+            lastExternalPID = app.processIdentifier
+            lastExternalAppName = app.localizedName
+        }
+
+        buildStatusItem()
+        installActivityMonitors()
+        installWorkspaceObserver()
+
+        tickTimer = Timer.scheduledTimer(withTimeInterval: 0.10, repeats: true) { [weak self] _ in
             Task { @MainActor in
                 self?.tick()
             }
         }
 
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.7) { [weak self] in
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) { [weak self] in
             guard let self else { return }
-            self.isLaunching = false
             if !CGPreflightScreenCaptureAccess() {
                 _ = CGRequestScreenCaptureAccess()
             }
@@ -102,75 +123,124 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationWillTerminate(_ notification: Notification) {
-        timer?.invalidate()
+        tickTimer?.invalidate()
         captureTask?.cancel()
+
+        if let globalMonitor { NSEvent.removeMonitor(globalMonitor) }
         if let localMonitor { NSEvent.removeMonitor(localMonitor) }
+        if let workspaceObserver {
+            NSWorkspace.shared.notificationCenter.removeObserver(workspaceObserver)
+        }
+
         restoreNow()
     }
 
     private func buildStatusItem() {
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
+
         if let button = statusItem.button {
-            let image = NSImage(systemSymbolName: "circle.lefthalf.filled", accessibilityDescription: "Asympta Breathe")
+            let image = NSImage(
+                systemSymbolName: "circle.lefthalf.filled",
+                accessibilityDescription: "Asympta Breathe"
+            )
             image?.isTemplate = true
             button.image = image
             button.toolTip = "Asympta Breathe"
         }
+
         rebuildMenu()
     }
 
     private func rebuildMenu() {
         guard statusItem != nil else { return }
+
         let menu = NSMenu()
 
         let title = NSMenuItem(title: "Asympta Breathe", action: nil, keyEquivalent: "")
         title.isEnabled = false
         menu.addItem(title)
 
-        let stateText: String
+        let statusText: String
         if !CGPreflightScreenCaptureAccess() {
-            stateText = "Screen Recording permission needed"
+            statusText = "Screen Recording permission needed"
         } else if session != nil {
-            stateText = "Breathing out"
-        } else if let target = lastEligibleTarget {
-            stateText = "Ready · \(target.appName)"
+            statusText = "Breathing out"
+        } else if let appName = currentExternalAppName() ?? lastExternalAppName {
+            let remaining = max(0, idleSeconds - (ProcessInfo.processInfo.systemUptime - lastActivityAt))
+            statusText = enabled
+                ? "Watching · \(appName) · \(String(format: "%.1f", remaining))s"
+                : "Disabled"
         } else {
-            stateText = "Ready"
+            statusText = enabled ? "Waiting for an app" : "Disabled"
         }
-        let state = NSMenuItem(title: stateText, action: nil, keyEquivalent: "")
-        state.isEnabled = false
-        menu.addItem(state)
+
+        let status = NSMenuItem(title: statusText, action: nil, keyEquivalent: "")
+        status.isEnabled = false
+        menu.addItem(status)
+
         menu.addItem(.separator())
 
-        let enabledItem = NSMenuItem(title: "Enabled", action: #selector(toggleEnabled), keyEquivalent: "")
+        let enabledItem = NSMenuItem(
+            title: "Enabled",
+            action: #selector(toggleEnabled),
+            keyEquivalent: ""
+        )
         enabledItem.target = self
         enabledItem.state = enabled ? .on : .off
         menu.addItem(enabledItem)
 
-        let breathe = NSMenuItem(title: "Breathe Current App Now", action: #selector(breatheNow), keyEquivalent: "")
+        let breathe = NSMenuItem(
+            title: "Breathe Current App Now",
+            action: #selector(breatheNow),
+            keyEquivalent: ""
+        )
         breathe.target = self
-        breathe.isEnabled = CGPreflightScreenCaptureAccess() && session == nil && lastEligibleTarget != nil
+        breathe.isEnabled = CGPreflightScreenCaptureAccess() && session == nil && lastExternalPID != nil
         menu.addItem(breathe)
 
         menu.addItem(.separator())
-        menu.addItem(makeValueMenu(title: "Idle delay", current: idleSeconds, values: [2, 4, 8, 15, 30], selector: #selector(setIdleDelay(_:))))
-        menu.addItem(makeValueMenu(title: "Fade duration", current: fadeSeconds, values: [3, 6, 9, 15, 30], selector: #selector(setFadeDuration(_:))))
+        menu.addItem(
+            makeValueMenu(
+                title: "Idle delay",
+                current: idleSeconds,
+                values: [2, 4, 8, 15, 30],
+                selector: #selector(setIdleDelay(_:))
+            )
+        )
+        menu.addItem(
+            makeValueMenu(
+                title: "Fade duration",
+                current: fadeSeconds,
+                values: [3, 6, 9, 15, 30],
+                selector: #selector(setFadeDuration(_:))
+            )
+        )
 
+        let permissionAllowed = CGPreflightScreenCaptureAccess()
         let permission = NSMenuItem(
-            title: CGPreflightScreenCaptureAccess() ? "Screen Recording: Allowed" : "Grant Screen Recording…",
-            action: CGPreflightScreenCaptureAccess() ? nil : #selector(requestScreenRecording),
+            title: permissionAllowed ? "Screen Recording: Allowed" : "Grant Screen Recording…",
+            action: permissionAllowed ? nil : #selector(requestScreenRecording),
             keyEquivalent: ""
         )
         permission.target = self
-        permission.isEnabled = !CGPreflightScreenCaptureAccess()
+        permission.isEnabled = !permissionAllowed
         menu.addItem(permission)
 
         menu.addItem(.separator())
-        let scope = NSMenuItem(title: "Works with the frontmost app window (Safari, Chrome, etc.)", action: nil, keyEquivalent: "")
+
+        let scope = NSMenuItem(
+            title: "Automatic · any frontmost app",
+            action: nil,
+            keyEquivalent: ""
+        )
         scope.isEnabled = false
         menu.addItem(scope)
 
-        let quit = NSMenuItem(title: "Quit Asympta Breathe", action: #selector(quitApp), keyEquivalent: "q")
+        let quit = NSMenuItem(
+            title: "Quit Asympta Breathe",
+            action: #selector(quitApp),
+            keyEquivalent: "q"
+        )
         quit.target = self
         menu.addItem(quit)
 
@@ -178,60 +248,142 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         statusItem.menu = menu
     }
 
-    private func makeValueMenu(title: String, current: Double, values: [Double], selector: Selector) -> NSMenuItem {
-        let parent = NSMenuItem(title: "\(title): \(Int(current))s", action: nil, keyEquivalent: "")
-        let sub = NSMenu()
+    private func makeValueMenu(
+        title: String,
+        current: Double,
+        values: [Double],
+        selector: Selector
+    ) -> NSMenuItem {
+        let parent = NSMenuItem(
+            title: "\(title): \(Int(current))s",
+            action: nil,
+            keyEquivalent: ""
+        )
+
+        let submenu = NSMenu()
+
         for value in values {
-            let item = NSMenuItem(title: "\(Int(value)) seconds", action: selector, keyEquivalent: "")
+            let item = NSMenuItem(
+                title: "\(Int(value)) seconds",
+                action: selector,
+                keyEquivalent: ""
+            )
             item.target = self
             item.representedObject = value
             item.state = abs(value - current) < 0.001 ? .on : .off
-            sub.addItem(item)
+            submenu.addItem(item)
         }
-        parent.submenu = sub
+
+        parent.submenu = submenu
         return parent
     }
 
-    private func installLocalWakeMonitor() {
+    private func installActivityMonitors() {
         let mask: NSEvent.EventTypeMask = [
-            .mouseMoved, .leftMouseDown, .rightMouseDown, .otherMouseDown,
-            .scrollWheel, .keyDown, .flagsChanged
+            .mouseMoved,
+            .leftMouseDragged,
+            .rightMouseDragged,
+            .otherMouseDragged,
+            .leftMouseDown,
+            .rightMouseDown,
+            .otherMouseDown,
+            .scrollWheel,
+            .keyDown,
+            .flagsChanged
         ]
 
-        localMonitor = NSEvent.addLocalMonitorForEvents(matching: mask) { [weak self] event in
-            guard let self else { return event }
-            guard self.session != nil else { return event }
-            guard ProcessInfo.processInfo.systemUptime >= self.wakeArmedAt else { return event }
-
-            Task { @MainActor in self.restoreNow() }
-            return nil
-        }
-    }
-
-    private func tick() {
-        if !isLaunching, session == nil, captureTask == nil {
-            if let target = currentFrontmostTarget() {
-                if lastEligibleTarget?.app.processIdentifier != target.app.processIdentifier ||
-                   lastEligibleTarget?.windowID != target.windowID {
-                    lastEligibleTarget = target
-                    rebuildMenu()
-                }
+        globalMonitor = NSEvent.addGlobalMonitorForEvents(matching: mask) { [weak self] _ in
+            Task { @MainActor in
+                self?.noteUserActivity()
             }
         }
 
-        guard enabled else { return }
+        localMonitor = NSEvent.addLocalMonitorForEvents(matching: mask) { [weak self] event in
+            guard let self else { return event }
 
-        let idle = CGEventSource.secondsSinceLastEventType(.combinedSessionState, eventType: anyInputEvent)
+            let now = ProcessInfo.processInfo.systemUptime
+
+            if self.session != nil && now >= self.wakeArmedAt {
+                Task { @MainActor in
+                    self.restoreNow()
+                }
+
+                switch event.type {
+                case .leftMouseDown, .rightMouseDown, .otherMouseDown, .scrollWheel, .keyDown:
+                    return nil
+                default:
+                    return event
+                }
+            }
+
+            self.noteUserActivity()
+            return event
+        }
+    }
+
+    private func installWorkspaceObserver() {
+        workspaceObserver = NSWorkspace.shared.notificationCenter.addObserver(
+            forName: NSWorkspace.didActivateApplicationNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] notification in
+            Task { @MainActor in
+                guard let self, self.session == nil else { return }
+
+                guard
+                    let app = notification.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication,
+                    app.processIdentifier != ProcessInfo.processInfo.processIdentifier,
+                    app.activationPolicy == .regular
+                else {
+                    return
+                }
+
+                self.lastExternalPID = app.processIdentifier
+                self.lastExternalAppName = app.localizedName
+                self.lastActivityAt = ProcessInfo.processInfo.systemUptime
+                self.rebuildMenu()
+            }
+        }
+    }
+
+    private func noteUserActivity() {
+        let now = ProcessInfo.processInfo.systemUptime
 
         if session != nil {
-            if ProcessInfo.processInfo.systemUptime >= wakeArmedAt, idle < 0.18 {
+            if now >= wakeArmedAt {
                 restoreNow()
             }
             return
         }
 
-        guard captureTask == nil, idle >= idleSeconds else { return }
+        lastActivityAt = now
+
+        if let app = NSWorkspace.shared.frontmostApplication,
+           app.processIdentifier != ProcessInfo.processInfo.processIdentifier,
+           app.activationPolicy == .regular {
+            lastExternalPID = app.processIdentifier
+            lastExternalAppName = app.localizedName
+        }
+    }
+
+    private func tick() {
+        guard enabled else { return }
+        guard session == nil, captureTask == nil else { return }
+
+        let now = ProcessInfo.processInfo.systemUptime
+        let idleFor = now - lastActivityAt
+
+        let second = Int(idleFor * 2)
+        if second != lastMenuRefreshSecond {
+            lastMenuRefreshSecond = second
+            if menu?.isAttached == true {
+                rebuildMenu()
+            }
+        }
+
+        guard idleFor >= idleSeconds else { return }
         guard let target = currentFrontmostTarget() else { return }
+
         startFade(target: target, manual: false)
     }
 
@@ -240,16 +392,37 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     @objc private func breatheNow() {
-        guard let target = lastEligibleTarget ?? currentFrontmostTarget() else { return }
+        guard session == nil, captureTask == nil else { return }
+
+        let pid = lastExternalPID
+        let target: AppTarget?
+
+        if let current = currentFrontmostTarget() {
+            target = current
+        } else if let pid {
+            target = targetForPID(pid)
+        } else {
+            target = nil
+        }
+
+        guard let target else {
+            NSSound.beep()
+            return
+        }
+
         startFade(target: target, manual: true)
     }
 
     @objc private func setIdleDelay(_ sender: NSMenuItem) {
-        if let v = sender.representedObject as? Double { idleSeconds = v }
+        if let value = sender.representedObject as? Double {
+            idleSeconds = value
+        }
     }
 
     @objc private func setFadeDuration(_ sender: NSMenuItem) {
-        if let v = sender.representedObject as? Double { fadeSeconds = v }
+        if let value = sender.representedObject as? Double {
+            fadeSeconds = value
+        }
     }
 
     @objc private func requestScreenRecording() {
@@ -261,7 +434,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         NSApp.terminate(nil)
     }
 
-    private func startFade(target: TargetWindow, manual: Bool) {
+    private func startFade(target: AppTarget, manual: Bool) {
         guard session == nil, captureTask == nil else { return }
         guard enabled || manual else { return }
 
@@ -273,27 +446,56 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         captureTask = Task { [weak self] in
             guard let self else { return }
+
             do {
-                let content = try await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: true)
-                guard let scWindow = content.windows.first(where: { $0.windowID == target.windowID }) else {
+                let shareable = try await SCShareableContent.excludingDesktopWindows(
+                    false,
+                    onScreenWindowsOnly: true
+                )
+
+                let scWindowsByID = Dictionary(
+                    uniqueKeysWithValues: shareable.windows.map { ($0.windowID, $0) }
+                )
+
+                var captured: [CapturedWindow] = []
+
+                for window in target.windows {
+                    guard let scWindow = scWindowsByID[window.windowID] else { continue }
+
+                    let filter = SCContentFilter(desktopIndependentWindow: scWindow)
+                    let config = SCStreamConfiguration()
+                    let scale = self.backingScale(for: window.appKitFrame)
+
+                    config.width = max(1, Int(window.cgFrame.width * scale))
+                    config.height = max(1, Int(window.cgFrame.height * scale))
+                    config.showsCursor = false
+                    config.queueDepth = 1
+                    config.shouldBeOpaque = false
+
+                    let image = try await SCScreenshotManager.captureImage(
+                        contentFilter: filter,
+                        configuration: config
+                    )
+
+                    captured.append(
+                        CapturedWindow(target: window, image: image)
+                    )
+                }
+
+                if Task.isCancelled {
                     self.captureTask = nil
                     return
                 }
 
-                let filter = SCContentFilter(desktopIndependentWindow: scWindow)
-                let config = SCStreamConfiguration()
-                let scale = self.backingScale(for: target.appKitFrame)
-                config.width = max(1, Int(target.cgFrame.width * scale))
-                config.height = max(1, Int(target.cgFrame.height * scale))
-                config.showsCursor = false
-                config.queueDepth = 1
-                config.shouldBeOpaque = false
-
-                let image = try await SCScreenshotManager.captureImage(contentFilter: filter, configuration: config)
-                if Task.isCancelled { self.captureTask = nil; return }
+                guard !captured.isEmpty else {
+                    self.captureTask = nil
+                    NSSound.beep()
+                    return
+                }
 
                 self.captureTask = nil
-                self.presentFade(target: target, image: image, manual: manual)
+                self.presentFade(target: target, captured: captured, manual: manual)
+
             } catch {
                 self.captureTask = nil
                 NSSound.beep()
@@ -302,66 +504,124 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
-    private func presentFade(target: TargetWindow, image: CGImage, manual: Bool) {
+    private func presentFade(
+        target: AppTarget,
+        captured: [CapturedWindow],
+        manual: Bool
+    ) {
         guard session == nil else { return }
 
-        let nsImage = NSImage(cgImage: image, size: target.appKitFrame.size)
-        let imagePanel = NSPanel(
-            contentRect: target.appKitFrame,
-            styleMask: [.borderless, .nonactivatingPanel],
-            backing: .buffered,
-            defer: false
+        var imagePanels: [NSPanel] = []
+
+        for item in captured {
+            let panel = NSPanel(
+                contentRect: item.target.appKitFrame,
+                styleMask: [.borderless, .nonactivatingPanel],
+                backing: .buffered,
+                defer: false
+            )
+
+            panel.isOpaque = false
+            panel.backgroundColor = .clear
+            panel.hasShadow = false
+            panel.alphaValue = 1
+            panel.ignoresMouseEvents = true
+            panel.level = .screenSaver
+            panel.collectionBehavior = [
+                .canJoinAllSpaces,
+                .fullScreenAuxiliary,
+                .stationary,
+                .ignoresCycle
+            ]
+            panel.animationBehavior = .none
+
+            let imageView = NSImageView(
+                frame: NSRect(origin: .zero, size: item.target.appKitFrame.size)
+            )
+            imageView.image = NSImage(
+                cgImage: item.image,
+                size: item.target.appKitFrame.size
+            )
+            imageView.imageScaling = .scaleAxesIndependently
+            imageView.imageAlignment = .alignCenter
+            panel.contentView = imageView
+
+            imagePanels.append(panel)
+        }
+
+        let shieldPanels = NSScreen.screens.map { screen -> WakePanel in
+            let shield = WakePanel(
+                contentRect: screen.frame,
+                styleMask: [.borderless],
+                backing: .buffered,
+                defer: false
+            )
+            shield.isOpaque = false
+            shield.backgroundColor = .clear
+            shield.hasShadow = false
+            shield.alphaValue = 1
+            shield.ignoresMouseEvents = false
+            shield.acceptsMouseMovedEvents = true
+            shield.level = NSWindow.Level(rawValue: NSWindow.Level.screenSaver.rawValue + 1)
+            shield.collectionBehavior = [
+                .canJoinAllSpaces,
+                .fullScreenAuxiliary,
+                .stationary,
+                .ignoresCycle
+            ]
+            shield.animationBehavior = .none
+            shield.contentView = NSView(
+                frame: NSRect(origin: .zero, size: screen.frame.size)
+            )
+            return shield
+        }
+
+        let newSession = FadeSession(
+            target: target,
+            imagePanels: imagePanels,
+            shieldPanels: shieldPanels
         )
-        imagePanel.isOpaque = false
-        imagePanel.backgroundColor = .clear
-        imagePanel.hasShadow = false
-        imagePanel.alphaValue = 1
-        imagePanel.ignoresMouseEvents = true
-        imagePanel.level = .screenSaver
-        imagePanel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary, .ignoresCycle]
-        imagePanel.animationBehavior = .none
 
-        let imageView = NSImageView(frame: NSRect(origin: .zero, size: target.appKitFrame.size))
-        imageView.image = nsImage
-        imageView.imageScaling = .scaleAxesIndependently
-        imageView.imageAlignment = .alignCenter
-        imagePanel.contentView = imageView
-
-        let shieldFrame = NSScreen.screens.map(\.frame).reduce(CGRect.null) { $0.union($1) }
-        let shield = WakePanel(
-            contentRect: shieldFrame,
-            styleMask: [.borderless],
-            backing: .buffered,
-            defer: false
-        )
-        shield.isOpaque = false
-        shield.backgroundColor = .clear
-        shield.hasShadow = false
-        shield.alphaValue = 1
-        shield.ignoresMouseEvents = false
-        shield.acceptsMouseMovedEvents = true
-        shield.level = NSWindow.Level(rawValue: NSWindow.Level.screenSaver.rawValue + 1)
-        shield.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary, .ignoresCycle]
-        shield.animationBehavior = .none
-        shield.contentView = NSView(frame: NSRect(origin: .zero, size: shieldFrame.size))
-
-        let newSession = FadeSession(target: target, imagePanel: imagePanel, shieldPanel: shield)
         session = newSession
-        wakeArmedAt = ProcessInfo.processInfo.systemUptime + (manual ? 0.55 : 0.18)
 
-        imagePanel.orderFrontRegardless()
-        shield.makeKeyAndOrderFront(nil)
+        // Manual mode needs a longer grace period because the click that chose
+        // "Breathe Current App Now" can generate trailing mouse events.
+        wakeArmedAt = ProcessInfo.processInfo.systemUptime + (manual ? 0.85 : 0.22)
 
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { [weak self, weak newSession] in
+        imagePanels.forEach { $0.orderFrontRegardless() }
+        shieldPanels.forEach { $0.orderFrontRegardless() }
+
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.06) { [weak self, weak newSession] in
             guard let self, let newSession, self.session === newSession else { return }
 
-            _ = target.app.hide()
+            guard target.app.hide() else {
+                self.session = nil
+                imagePanels.forEach {
+                    $0.orderOut(nil)
+                    $0.close()
+                }
+                shieldPanels.forEach {
+                    $0.orderOut(nil)
+                    $0.close()
+                }
+                NSSound.beep()
+                self.rebuildMenu()
+                return
+            }
 
             NSAnimationContext.runAnimationGroup { context in
                 context.duration = self.fadeSeconds
-                context.timingFunction = CAMediaTimingFunction(controlPoints: 0.37, 0.0, 0.63, 1.0)
+                context.timingFunction = CAMediaTimingFunction(
+                    controlPoints: 0.37,
+                    0.0,
+                    0.63,
+                    1.0
+                )
                 context.allowsImplicitAnimation = true
-                imagePanel.animator().alphaValue = 0.0
+
+                for panel in imagePanels {
+                    panel.animator().alphaValue = 0
+                }
             }
         }
 
@@ -369,73 +629,137 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func restoreNow() {
-        guard let current = session else { return }
+        guard let current = session else {
+            lastActivityAt = ProcessInfo.processInfo.systemUptime
+            return
+        }
+
         session = nil
         captureTask?.cancel()
         captureTask = nil
 
-        current.imagePanel.alphaValue = 1
+        current.imagePanels.forEach { $0.alphaValue = 1 }
+
         _ = current.target.app.unhide()
         _ = current.target.app.activate(options: [])
-        current.shieldPanel.orderOut(nil)
+
+        current.shieldPanels.forEach { $0.orderOut(nil) }
 
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.06) {
-            current.imagePanel.orderOut(nil)
-            current.imagePanel.close()
-            current.shieldPanel.close()
+            current.imagePanels.forEach {
+                $0.orderOut(nil)
+                $0.close()
+            }
+            current.shieldPanels.forEach { $0.close() }
         }
+
+        lastActivityAt = ProcessInfo.processInfo.systemUptime
+        lastExternalPID = current.target.app.processIdentifier
+        lastExternalAppName = current.target.appName
         rebuildMenu()
     }
 
-    private func currentFrontmostTarget() -> TargetWindow? {
+    private func currentFrontmostTarget() -> AppTarget? {
         guard let app = NSWorkspace.shared.frontmostApplication else { return nil }
-        guard app.processIdentifier != ProcessInfo.processInfo.processIdentifier else { return lastEligibleTarget }
-        guard app.activationPolicy == .regular else { return nil }
-
-        if let bundle = app.bundleIdentifier,
-           bundle == appBundleID || bundle == "com.apple.finder" {
+        guard app.processIdentifier != ProcessInfo.processInfo.processIdentifier else {
+            if let pid = lastExternalPID {
+                return targetForPID(pid)
+            }
             return nil
         }
 
-        let options: CGWindowListOption = [.optionOnScreenOnly, .excludeDesktopElements]
-        guard let list = CGWindowListCopyWindowInfo(options, kCGNullWindowID) as? [[String: Any]] else { return nil }
+        guard app.activationPolicy == .regular else { return nil }
+        guard app.bundleIdentifier != appBundleID else { return nil }
+
+        lastExternalPID = app.processIdentifier
+        lastExternalAppName = app.localizedName
+
+        return targetForPID(app.processIdentifier)
+    }
+
+    private func targetForPID(_ pid: pid_t) -> AppTarget? {
+        guard let app = NSRunningApplication(processIdentifier: pid) else { return nil }
+        guard !app.isTerminated, app.activationPolicy == .regular else { return nil }
+        guard app.bundleIdentifier != appBundleID else { return nil }
+
+        let options: CGWindowListOption = [
+            .optionOnScreenOnly,
+            .excludeDesktopElements
+        ]
+
+        guard
+            let list = CGWindowListCopyWindowInfo(options, kCGNullWindowID)
+                as? [[String: Any]]
+        else {
+            return nil
+        }
+
+        var windows: [TargetWindow] = []
 
         for info in list {
             guard
-                let pid = (info[kCGWindowOwnerPID as String] as? NSNumber)?.int32Value,
-                pid == app.processIdentifier,
+                let ownerPID = (info[kCGWindowOwnerPID as String] as? NSNumber)?.int32Value,
+                ownerPID == pid,
                 let layer = (info[kCGWindowLayer as String] as? NSNumber)?.intValue,
                 layer == 0,
                 let alpha = (info[kCGWindowAlpha as String] as? NSNumber)?.doubleValue,
                 alpha > 0.01,
-                let windowNumber = (info[kCGWindowNumber as String] as? NSNumber)?.uint32Value,
+                let number = (info[kCGWindowNumber as String] as? NSNumber)?.uint32Value,
                 let bounds = info[kCGWindowBounds as String] as? NSDictionary,
-                let cgFrame = CGRect(dictionaryRepresentation: bounds as CFDictionary),
-                cgFrame.width >= 160,
-                cgFrame.height >= 100
-            else { continue }
+                let cgFrame = CGRect(
+                    dictionaryRepresentation: bounds as CFDictionary
+                ),
+                cgFrame.width >= 120,
+                cgFrame.height >= 80
+            else {
+                continue
+            }
 
-            return TargetWindow(
-                app: app,
-                windowID: CGWindowID(windowNumber),
-                cgFrame: cgFrame,
-                appKitFrame: appKitFrame(fromCGWindowFrame: cgFrame),
-                appName: app.localizedName ?? "Current App"
+            windows.append(
+                TargetWindow(
+                    windowID: CGWindowID(number),
+                    cgFrame: cgFrame,
+                    appKitFrame: appKitFrame(fromCGWindowFrame: cgFrame)
+                )
             )
         }
-        return nil
+
+        guard !windows.isEmpty else { return nil }
+
+        return AppTarget(
+            app: app,
+            windows: windows,
+            appName: app.localizedName ?? "Current App"
+        )
+    }
+
+    private func currentExternalAppName() -> String? {
+        guard let app = NSWorkspace.shared.frontmostApplication else { return nil }
+        guard app.processIdentifier != ProcessInfo.processInfo.processIdentifier else {
+            return lastExternalAppName
+        }
+        guard app.activationPolicy == .regular else { return nil }
+        return app.localizedName
     }
 
     private func appKitFrame(fromCGWindowFrame frame: CGRect) -> CGRect {
-        let mainHeight = CGDisplayBounds(CGMainDisplayID()).height
-        return CGRect(x: frame.minX, y: mainHeight - frame.minY - frame.height, width: frame.width, height: frame.height)
+        let mainDisplayHeight = CGDisplayBounds(CGMainDisplayID()).height
+
+        return CGRect(
+            x: frame.minX,
+            y: mainDisplayHeight - frame.minY - frame.height,
+            width: frame.width,
+            height: frame.height
+        )
     }
 
     private func backingScale(for rect: CGRect) -> CGFloat {
         let center = CGPoint(x: rect.midX, y: rect.midY)
+
         if let screen = NSScreen.screens.first(where: { $0.frame.contains(center) }) {
             return screen.backingScaleFactor
         }
+
         return NSScreen.main?.backingScaleFactor ?? 2
     }
 }
