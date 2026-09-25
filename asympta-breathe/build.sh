@@ -20,6 +20,7 @@ COMMON=(
   -sdk "$SDK"
   -framework AppKit
   -framework ScreenCaptureKit
+  -framework AVFoundation
   -framework CoreGraphics
   -framework QuartzCore
   -framework ApplicationServices
@@ -49,7 +50,7 @@ cat > "$CONTENTS/Info.plist" <<'PLIST'
   <key>CFBundleName</key><string>Asympta Breathe</string>
   <key>CFBundlePackageType</key><string>APPL</string>
   <key>CFBundleShortVersionString</key><string>1.14.0</string>
-  <key>CFBundleVersion</key><string>141</string>
+  <key>CFBundleVersion</key><string>142</string>
   <key>LSMinimumSystemVersion</key><string>14.0</string>
   <key>LSUIElement</key><true/>
   <key>NSHighResolutionCapable</key><true/>
