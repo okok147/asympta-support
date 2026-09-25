@@ -5142,9 +5142,35 @@ final class AppDelegate:
             return
         }
 
-        if session != nil {
-            // Once resting, pointer/scroll/keyboard do not wake the whole desktop.
-            // Hover, live typing, and click-restore are handled by session-specific logic.
+        if let session {
+            switch kind {
+            case .pointer:
+                updateHoverPreview(
+                    session:
+                        session
+                )
+
+            case .keyboard:
+                Task {
+                    @MainActor in
+
+                    await updateTextReveal(
+                        session:
+                            session
+                    )
+                }
+
+            case .click:
+                restoreRestingAppUnderPointer(
+                    session:
+                        session
+                )
+
+            case .scroll,
+                 .other:
+                break
+            }
+
             return
         }
 
@@ -6245,108 +6271,51 @@ final class AppDelegate:
         session:
             FadeSession
     ) {
+        // Intentionally no second global monitor.
+        // The single listen-only ActivityMonitor already observes clicks.
         session.clickMonitor =
+            nil
+    }
+
+    private func restoreRestingAppUnderPointer(
+        session:
+            FadeSession
+    ) {
+        let point =
             NSEvent
-                .addGlobalMonitorForEvents(
-                    matching: [
-                        .leftMouseDown,
-                        .rightMouseDown,
-                        .otherMouseDown
-                    ]
-                ) {
-                    [weak self,
-                     weak session]
-                    _ in
+                .mouseLocation
 
-                    Task {
-                        @MainActor in
+        guard
+            let pid =
+                topmostRealAppPID(
+                    at:
+                        point
+                ),
+            session
+                .remainingPIDs
+                .contains(
+                    pid
+                )
+        else {
+            return
+        }
 
-                        guard
-                            let self,
-                            let session,
-                            self
-                                .session
-                                === session
-                        else {
-                            return
-                        }
-
-                        let point =
-                            NSEvent
-                                .mouseLocation
-
-                        guard
-                            let pid =
-                                self
-                                    .topmostRealAppPID(
-                                        at:
-                                            point
-                                    ),
-                            session
-                                .remainingPIDs
-                                .contains(
-                                    pid
-                                )
-                        else {
-                            return
-                        }
-
-                        self
-                            .breatheIn(
-                                pid:
-                                    pid
-                            )
-                    }
-                }
+        breatheIn(
+            pid:
+                pid
+        )
     }
 
     private func startHoverTracking(
         session:
             FadeSession
     ) {
+        // Pointer movement is delivered by ActivityMonitor.
+        // No repeating timer is needed.
         updateHoverPreview(
             session:
                 session
         )
-
-        session.hoverTimer =
-            Timer
-                .scheduledTimer(
-                    withTimeInterval:
-                        0.06,
-                    repeats:
-                        true
-                ) {
-                    [weak self,
-                     weak session]
-                    _ in
-
-                    Task {
-                        @MainActor in
-
-                        guard
-                            let self,
-                            let session,
-                            self
-                                .session
-                                === session
-                        else {
-                            return
-                        }
-
-                        self
-                            .applyLayerOcclusion(
-                                session:
-                                    session
-                            )
-
-                        self
-                            .updateHoverPreview(
-                                session:
-                                    session
-                            )
-                    }
-                }
     }
 
     private func updateHoverPreview(
@@ -6500,47 +6469,12 @@ final class AppDelegate:
         session:
             FadeSession
     ) {
-        Task {
-            @MainActor in
-
-            await updateTextReveal(
-                session:
-                    session
-            )
-        }
-
-        session.focusTimer =
-            Timer
-                .scheduledTimer(
-                    withTimeInterval:
-                        0.08,
-                    repeats:
-                        true
-                ) {
-                    [weak self,
-                     weak session]
-                    _ in
-
-                    Task {
-                        @MainActor in
-
-                        guard
-                            let self,
-                            let session,
-                            self
-                                .session
-                                === session
-                        else {
-                            return
-                        }
-
-                        await self
-                            .updateTextReveal(
-                                session:
-                                    session
-                            )
-                    }
-                }
+        // Typing refresh is triggered by keyboard events from ActivityMonitor.
+        // This avoids a permanent 12.5 Hz screenshot loop while the desktop rests.
+        clearTextReveals(
+            session:
+                session
+        )
     }
 
     private func updateTextReveal(
