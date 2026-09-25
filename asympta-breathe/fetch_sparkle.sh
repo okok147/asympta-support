@@ -22,15 +22,30 @@ if [[ ! -d "$DEST" ]]; then
   tar -xJf "$ARCHIVE" -C "$DEST"
 fi
 
-FRAMEWORK="$(find "$DEST" -type d -name Sparkle.framework -print -quit)"
-if [[ -z "$FRAMEWORK" ]]; then
+if [[ -d "$DEST/Sparkle.framework" ]]; then
+  FRAMEWORK="$DEST/Sparkle.framework"
+else
+  FRAMEWORK="$(find "$DEST" -maxdepth 3 -type d -name Sparkle.framework -not -path '*/Sparkle Test App.app/*' -print -quit)"
+fi
+
+if [[ -z "${FRAMEWORK:-}" || ! -d "$FRAMEWORK" ]]; then
   echo "Sparkle.framework not found after extraction" >&2
   exit 1
 fi
 
-DIST_ROOT="$(dirname "$FRAMEWORK")"
-if [[ ! -x "$DIST_ROOT/bin/sign_update" ]]; then
-  echo "Sparkle signing tools not found in $DIST_ROOT/bin" >&2
+if [[ -x "$DEST/bin/sign_update" ]]; then
+  DIST_ROOT="$DEST"
+else
+  SIGN_TOOL="$(find "$DEST" -maxdepth 4 -type f -name sign_update -perm -111 -print -quit)"
+  if [[ -z "$SIGN_TOOL" ]]; then
+    echo "Sparkle signing tools not found after extraction" >&2
+    exit 1
+  fi
+  DIST_ROOT="$(dirname "$(dirname "$SIGN_TOOL")")"
+fi
+
+if [[ ! -d "$DIST_ROOT/Sparkle.framework" ]]; then
+  echo "Sparkle distribution root does not contain Sparkle.framework: $DIST_ROOT" >&2
   exit 1
 fi
 
