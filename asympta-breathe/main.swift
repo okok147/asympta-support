@@ -12,6 +12,69 @@ private let permissionResetPendingKey = "permissionResetPending"
 private let lastPermissionResetVersionKey = "lastPermissionResetVersion"
 private let didShowWelcomeKey = "didShowWelcomeAfterPermissions"
 
+private enum AsymptaPalette {
+    static let paper =
+        NSColor(
+            calibratedRed: 0.956,
+            green: 0.949,
+            blue: 0.925,
+            alpha: 1
+        )
+
+    static let paperCool =
+        NSColor(
+            calibratedRed: 0.929,
+            green: 0.938,
+            blue: 0.949,
+            alpha: 1
+        )
+
+    static let ink =
+        NSColor(
+            calibratedRed: 0.11,
+            green: 0.16,
+            blue: 0.23,
+            alpha: 1
+        )
+
+    static let muted =
+        NSColor(
+            calibratedRed: 0.35,
+            green: 0.42,
+            blue: 0.50,
+            alpha: 1
+        )
+
+    static let quietBlue =
+        NSColor(
+            calibratedRed: 0.337,
+            green: 0.420,
+            blue: 0.608,
+            alpha: 1
+        )
+
+    static let quietBlueSoft =
+        NSColor(
+            calibratedRed: 0.337,
+            green: 0.420,
+            blue: 0.608,
+            alpha: 0.14
+        )
+
+    static let card =
+        NSColor(
+            calibratedWhite: 1,
+            alpha: 0.72
+        )
+
+    static let hairline =
+        NSColor(
+            calibratedWhite: 0.2,
+            alpha: 0.08
+        )
+}
+
+
 private let ciContext = CIContext(
     options: [
         .useSoftwareRenderer: false
@@ -38,6 +101,292 @@ private struct PreparedOverlay {
     let backgroundImage: CGImage
     let contentImage: CGImage
     let borderImage: CGImage?
+}
+
+private enum ActivityKind {
+    case pointer
+    case click
+    case scroll
+    case keyboard
+    case other
+}
+
+private let activityEventTapCallback:
+    CGEventTapCallBack = {
+        _,
+        type,
+        event,
+        userInfo in
+
+        guard
+            let userInfo
+        else {
+            return
+                Unmanaged
+                    .passUnretained(
+                        event
+                    )
+        }
+
+        let monitor =
+            Unmanaged<ActivityMonitor>
+                .fromOpaque(
+                    userInfo
+                )
+                .takeUnretainedValue()
+
+        monitor.handle(
+            type:
+                type,
+            event:
+                event
+        )
+
+        return
+            Unmanaged
+                .passUnretained(
+                    event
+                )
+    }
+
+private final class ActivityMonitor {
+
+    var onActivity:
+        ((ActivityKind) -> Void)?
+
+    private var eventTap:
+        CFMachPort?
+
+    private var runLoopSource:
+        CFRunLoopSource?
+
+    private var lastPointerLocation:
+        CGPoint?
+
+    private(set) var isRunning =
+        false
+
+    private let pointerJitterSquared:
+        CGFloat =
+            9
+
+    func start() -> Bool {
+        guard
+            !isRunning
+        else {
+            return true
+        }
+
+        let types:
+            [CGEventType] = [
+                .mouseMoved,
+                .leftMouseDragged,
+                .rightMouseDragged,
+                .otherMouseDragged,
+                .leftMouseDown,
+                .rightMouseDown,
+                .otherMouseDown,
+                .scrollWheel,
+                .keyDown,
+                .flagsChanged
+            ]
+
+        let mask =
+            types.reduce(
+                CGEventMask(
+                    0
+                )
+            ) {
+                partial,
+                type in
+
+                partial
+                | (
+                    CGEventMask(
+                        1
+                    )
+                    << CGEventMask(
+                        type
+                            .rawValue
+                    )
+                )
+            }
+
+        guard
+            let tap =
+                CGEvent
+                    .tapCreate(
+                        tap:
+                            .cgSessionEventTap,
+                        place:
+                            .tailAppendEventTap,
+                        options:
+                            .listenOnly,
+                        eventsOfInterest:
+                            mask,
+                        callback:
+                            activityEventTapCallback,
+                        userInfo:
+                            Unmanaged
+                                .passUnretained(
+                                    self
+                                )
+                                .toOpaque()
+                    )
+        else {
+            return false
+        }
+
+        eventTap =
+            tap
+
+        let source =
+            CFMachPortCreateRunLoopSource(
+                kCFAllocatorDefault,
+                tap,
+                0
+            )
+
+        runLoopSource =
+            source
+
+        CFRunLoopAddSource(
+            CFRunLoopGetMain(),
+            source,
+            .commonModes
+        )
+
+        CGEvent
+            .tapEnable(
+                tap:
+                    tap,
+                enable:
+                    true
+            )
+
+        isRunning =
+            true
+
+        return true
+    }
+
+    func stop() {
+        if let eventTap {
+            CGEvent
+                .tapEnable(
+                    tap:
+                        eventTap,
+                    enable:
+                        false
+                )
+        }
+
+        if let runLoopSource {
+            CFRunLoopRemoveSource(
+                CFRunLoopGetMain(),
+                runLoopSource,
+                .commonModes
+            )
+        }
+
+        eventTap =
+            nil
+
+        runLoopSource =
+            nil
+
+        isRunning =
+            false
+    }
+
+    fileprivate func handle(
+        type:
+            CGEventType,
+        event:
+            CGEvent
+    ) {
+        if type
+            == .tapDisabledByTimeout
+            || type
+            == .tapDisabledByUserInput {
+            if let eventTap {
+                CGEvent
+                    .tapEnable(
+                        tap:
+                            eventTap,
+                        enable:
+                            true
+                    )
+            }
+
+            return
+        }
+
+        let kind:
+            ActivityKind
+
+        switch type {
+        case .mouseMoved,
+             .leftMouseDragged,
+             .rightMouseDragged,
+             .otherMouseDragged:
+            let point =
+                event.location
+
+            if let last =
+                lastPointerLocation {
+                let dx =
+                    point.x
+                    - last.x
+
+                let dy =
+                    point.y
+                    - last.y
+
+                if dx * dx
+                    + dy * dy
+                    < pointerJitterSquared {
+                    return
+                }
+            }
+
+            lastPointerLocation =
+                point
+
+            kind =
+                .pointer
+
+        case .leftMouseDown,
+             .rightMouseDown,
+             .otherMouseDown:
+            kind =
+                .click
+
+        case .scrollWheel:
+            kind =
+                .scroll
+
+        case .keyDown,
+             .flagsChanged:
+            kind =
+                .keyboard
+
+        default:
+            kind =
+                .other
+        }
+
+        DispatchQueue
+            .main
+            .async {
+                [weak self] in
+
+                self?
+                    .onActivity?(
+                        kind
+                    )
+            }
+    }
 }
 
 private final class LiveWindowStream:
@@ -101,7 +450,7 @@ private final class LiveWindowStream:
             false
 
         config.queueDepth =
-            3
+            2
 
         config.shouldBeOpaque =
             false
