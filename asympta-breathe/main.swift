@@ -1759,6 +1759,159 @@ private final class WelcomeWindowController:
     }
 }
 
+private final class AsymptaPaperView:
+    NSView {
+
+    override func draw(
+        _ dirtyRect:
+            NSRect
+    ) {
+        super.draw(
+            dirtyRect
+        )
+
+        NSGradient(
+            starting:
+                AsymptaPalette.paper,
+            ending:
+                AsymptaPalette.paperCool
+        )?
+        .draw(
+            in:
+                bounds,
+            angle:
+                -20
+        )
+
+        AsymptaPalette
+            .hairline
+            .setFill()
+
+        for x
+            in stride(
+                from:
+                    18.0,
+                through:
+                    Double(
+                        bounds.width
+                    ),
+                by:
+                    38
+            ) {
+            for y
+                in stride(
+                    from:
+                        16.0,
+                    through:
+                        Double(
+                            bounds.height
+                        ),
+                    by:
+                        38
+                ) {
+                NSBezierPath(
+                    ovalIn:
+                        CGRect(
+                            x:
+                                x,
+                            y:
+                                y,
+                            width:
+                                1.2,
+                            height:
+                                1.2
+                        )
+                )
+                .fill()
+            }
+        }
+    }
+}
+
+private final class AsymptaCardView:
+    NSView {
+
+    override init(
+        frame frameRect:
+            NSRect
+    ) {
+        super.init(
+            frame:
+                frameRect
+        )
+
+        wantsLayer =
+            true
+
+        layer?
+            .backgroundColor =
+                AsymptaPalette
+                    .card
+                    .cgColor
+
+        layer?
+            .cornerRadius =
+                14
+
+        layer?
+            .borderWidth =
+                1
+
+        layer?
+            .borderColor =
+                AsymptaPalette
+                    .hairline
+                    .cgColor
+    }
+
+    required init?(
+        coder:
+            NSCoder
+    ) {
+        fatalError(
+            "init(coder:) has not been implemented"
+        )
+    }
+}
+
+private func asymptaLabel(
+    _ text:
+        String,
+    size:
+        CGFloat,
+    weight:
+        NSFont.Weight =
+            .regular,
+    color:
+        NSColor =
+            AsymptaPalette.ink
+) -> NSTextField {
+    let field =
+        NSTextField(
+            labelWithString:
+                text
+        )
+
+    field.font =
+        .systemFont(
+            ofSize:
+                size,
+            weight:
+                weight
+        )
+
+    field.textColor =
+        color
+
+    field.backgroundColor =
+        .clear
+
+    field.isBordered =
+        false
+
+    return field
+}
+
 @MainActor
 private final class BreatheSettingsController:
     NSWindowController {
@@ -1782,72 +1935,106 @@ private final class BreatheSettingsController:
 
     private let idleSlider =
         NSSlider(
-            value: 0,
-            minValue: 0,
-            maxValue: 300,
-            target: nil,
-            action: nil
-        )
-
-    private let exhaleSlider =
-        NSSlider(
-            value: 0,
-            minValue: 0,
-            maxValue: 300,
-            target: nil,
-            action: nil
-        )
-
-    private let inhaleSlider =
-        NSSlider(
-            value: 0,
-            minValue: 0,
-            maxValue: 300,
-            target: nil,
-            action: nil
-        )
-
-    private let restingSlider =
-        NSSlider(
-            value: 0,
-            minValue: 0,
-            maxValue: 100,
-            target: nil,
-            action: nil
-        )
-
-    private let idleValue =
-        NSTextField(
-            labelWithString:
-                ""
-        )
-
-    private let exhaleValue =
-        NSTextField(
-            labelWithString:
-                ""
-        )
-
-    private let inhaleValue =
-        NSTextField(
-            labelWithString:
-                ""
-        )
-
-    private let restingValue =
-        NSTextField(
-            labelWithString:
-                ""
-        )
-
-    private let saveButton =
-        NSButton(
-            title:
-                "Save & Apply",
+            value:
+                0,
+            minValue:
+                0,
+            maxValue:
+                300,
             target:
                 nil,
             action:
                 nil
+        )
+
+    private let exhaleSlider =
+        NSSlider(
+            value:
+                0,
+            minValue:
+                0,
+            maxValue:
+                300,
+            target:
+                nil,
+            action:
+                nil
+        )
+
+    private let inhaleSlider =
+        NSSlider(
+            value:
+                0,
+            minValue:
+                0,
+            maxValue:
+                300,
+            target:
+                nil,
+            action:
+                nil
+        )
+
+    private let restingSlider =
+        NSSlider(
+            value:
+                0,
+            minValue:
+                0,
+            maxValue:
+                100,
+            target:
+                nil,
+            action:
+                nil
+        )
+
+    private let idleValue =
+        asymptaLabel(
+            "",
+            size:
+                12,
+            weight:
+                .medium,
+            color:
+                AsymptaPalette
+                    .muted
+        )
+
+    private let exhaleValue =
+        asymptaLabel(
+            "",
+            size:
+                12,
+            weight:
+                .medium,
+            color:
+                AsymptaPalette
+                    .muted
+        )
+
+    private let inhaleValue =
+        asymptaLabel(
+            "",
+            size:
+                12,
+            weight:
+                .medium,
+            color:
+                AsymptaPalette
+                    .muted
+        )
+
+    private let restingValue =
+        asymptaLabel(
+            "",
+            size:
+                12,
+            weight:
+                .medium,
+            color:
+                AsymptaPalette
+                    .muted
         )
 
     private var activationObserver:
@@ -1867,14 +2054,19 @@ private final class BreatheSettingsController:
             NSWindow(
                 contentRect:
                     NSRect(
-                        x: 0,
-                        y: 0,
-                        width: 560,
-                        height: 470
+                        x:
+                            0,
+                        y:
+                            0,
+                        width:
+                            720,
+                        height:
+                            560
                     ),
                 styleMask: [
                     .titled,
-                    .closable
+                    .closable,
+                    .miniaturizable
                 ],
                 backing:
                     .buffered,
@@ -1885,30 +2077,32 @@ private final class BreatheSettingsController:
         window.title =
             "Asympta Breathe Settings"
 
-        window
-            .isReleasedWhenClosed =
-                false
+        window.titlebarAppearsTransparent =
+            true
 
-        // Settings is a protected Breathe surface.
-        // It must always remain fully opaque and above every Breathe overlay.
+        window.titleVisibility =
+            .hidden
+
+        window.isMovableByWindowBackground =
+            true
+
+        window.backgroundColor =
+            AsymptaPalette.paper
+
         window.alphaValue =
             1
 
+        // Breathe overlays are normal-level. Settings stays quietly above them.
         window.level =
-            NSWindow.Level(
-                rawValue:
-                    NSWindow.Level
-                        .screenSaver
-                        .rawValue
-                    + 2
-            )
+            .floating
 
         window.collectionBehavior = [
-            .canJoinAllSpaces,
+            .moveToActiveSpace,
             .fullScreenAuxiliary
         ]
 
-        window.center()
+        window.isReleasedWhenClosed =
+            false
 
         super.init(
             window:
@@ -1964,22 +2158,18 @@ private final class BreatheSettingsController:
         resting:
             Double
     ) {
-        idleSlider
-            .doubleValue =
-                idle
+        idleSlider.doubleValue =
+            idle
 
-        exhaleSlider
-            .doubleValue =
-                exhale
+        exhaleSlider.doubleValue =
+            exhale
 
-        inhaleSlider
-            .doubleValue =
-                inhale
+        inhaleSlider.doubleValue =
+            inhale
 
-        restingSlider
-            .doubleValue =
-                resting
-                * 100
+        restingSlider.doubleValue =
+            resting
+            * 100
 
         refreshLabels()
     }
@@ -1995,16 +2185,7 @@ private final class BreatheSettingsController:
             1
 
         window.level =
-            NSWindow.Level(
-                rawValue:
-                    NSWindow.Level
-                        .screenSaver
-                        .rawValue
-                    + 2
-            )
-
-        window
-            .orderFrontRegardless()
+            .floating
 
         window
             .makeKeyAndOrderFront(
@@ -2014,145 +2195,353 @@ private final class BreatheSettingsController:
 
     private func configureUI() {
         guard
-            let contentView =
-                window?
-                    .contentView
+            let window
         else {
             return
         }
 
-        let title =
-            NSTextField(
-                labelWithString:
-                    "Breathe"
+        let root =
+            AsymptaPaperView(
+                frame:
+                    window
+                        .contentView?
+                        .bounds
+                    ?? .zero
             )
 
-        title.font =
-            .systemFont(
-                ofSize:
-                    26,
+        root.autoresizingMask = [
+            .width,
+            .height
+        ]
+
+        window.contentView =
+            root
+
+        let brand =
+            asymptaLabel(
+                "Asympta Breathe",
+                size:
+                    14,
                 weight:
                     .semibold
             )
 
+        brand.frame =
+            CGRect(
+                x:
+                    34,
+                y:
+                    510,
+                width:
+                    190,
+                height:
+                    24
+            )
+
+        root.addSubview(
+            brand
+        )
+
+        let whisper =
+            asymptaLabel(
+                "less noise · more you",
+                size:
+                    11,
+                weight:
+                    .medium,
+                color:
+                    AsymptaPalette
+                        .quietBlue
+            )
+
+        whisper.frame =
+            CGRect(
+                x:
+                    34,
+                y:
+                    487,
+                width:
+                    185,
+                height:
+                    20
+            )
+
+        root.addSubview(
+            whisper
+        )
+
+        let note =
+            asymptaLabel(
+                "When things rest,\nyou think clearer.",
+                size:
+                    15,
+                weight:
+                    .medium,
+                color:
+                    AsymptaPalette
+                        .quietBlue
+            )
+
+        note.frame =
+            CGRect(
+                x:
+                    34,
+                y:
+                    305,
+                width:
+                    175,
+                height:
+                    58
+            )
+
+        note.maximumNumberOfLines =
+            3
+
+        root.addSubview(
+            note
+        )
+
+        let quietInfo =
+            asymptaLabel(
+                "Three timing phases. One resting visibility. Save only when the rhythm feels right.",
+                size:
+                    11,
+                color:
+                    AsymptaPalette
+                        .muted
+            )
+
+        quietInfo.frame =
+            CGRect(
+                x:
+                    34,
+                y:
+                    215,
+                width:
+                    178,
+                height:
+                    70
+            )
+
+        quietInfo.maximumNumberOfLines =
+            5
+
+        root.addSubview(
+            quietInfo
+        )
+
+        let title =
+            asymptaLabel(
+                "Breathing",
+                size:
+                    30,
+                weight:
+                    .semibold
+            )
+
+        title.frame =
+            CGRect(
+                x:
+                    260,
+                y:
+                    490,
+                width:
+                    300,
+                height:
+                    42
+            )
+
+        root.addSubview(
+            title
+        )
+
         let subtitle =
-            NSTextField(
-                wrappingLabelWithString:
-                    "Adjust the three timing phases and resting visibility. "
-                    + "Changes stay as a draft until you choose Save & Apply."
+            asymptaLabel(
+                "Let unused content rest, so the thing you chose can stay clear.",
+                size:
+                    13,
+                color:
+                    AsymptaPalette
+                        .muted
             )
 
-        subtitle
-            .font =
-                .systemFont(
-                    ofSize:
-                        13
-                )
+        subtitle.frame =
+            CGRect(
+                x:
+                    262,
+                y:
+                    464,
+                width:
+                    420,
+                height:
+                    22
+            )
 
-        subtitle
-            .textColor =
-                .secondaryLabelColor
+        root.addSubview(
+            subtitle
+        )
 
-        for slider
-            in [
-                idleSlider,
-                exhaleSlider,
-                inhaleSlider,
-                restingSlider
-            ] {
-            slider
-                .isContinuous =
-                    true
+        let timingTitle =
+            asymptaLabel(
+                "TIMING",
+                size:
+                    11,
+                weight:
+                    .semibold,
+                color:
+                    AsymptaPalette
+                        .muted
+            )
 
-            slider.target =
-                self
+        timingTitle.frame =
+            CGRect(
+                x:
+                    252,
+                y:
+                    433,
+                width:
+                    120,
+                height:
+                    20
+            )
 
-            slider.action =
-                #selector(
-                    sliderChanged(
-                        _:
+        root.addSubview(
+            timingTitle
+        )
+
+        let timingCard =
+            AsymptaCardView(
+                frame:
+                    CGRect(
+                        x:
+                            248,
+                        y:
+                            224,
+                        width:
+                            438,
+                        height:
+                            205
                     )
-                )
-        }
-
-        let rows = [
-            makeRow(
-                title:
-                    "Idle delay",
-                detail:
-                    "Wait before breathing out",
-                slider:
-                    idleSlider,
-                value:
-                    idleValue,
-                minLabel:
-                    "0s",
-                maxLabel:
-                    "5m"
-            ),
-            makeRow(
-                title:
-                    "Exhale",
-                detail:
-                    "Time from full visibility to rest",
-                slider:
-                    exhaleSlider,
-                value:
-                    exhaleValue,
-                minLabel:
-                    "0s",
-                maxLabel:
-                    "5m"
-            ),
-            makeRow(
-                title:
-                    "Inhale",
-                detail:
-                    "Time from rest back to full visibility",
-                slider:
-                    inhaleSlider,
-                value:
-                    inhaleValue,
-                minLabel:
-                    "0s",
-                maxLabel:
-                    "5m"
-            ),
-            makeRow(
-                title:
-                    "Resting content",
-                detail:
-                    "How much of the front app layer stays visible",
-                slider:
-                    restingSlider,
-                value:
-                    restingValue,
-                minLabel:
-                    "0%",
-                maxLabel:
-                    "100%"
-            )
-        ]
-
-        saveButton.target =
-            self
-
-        saveButton.action =
-            #selector(
-                saveAndApply
             )
 
-        saveButton
-            .bezelStyle =
-                .rounded
+        root.addSubview(
+            timingCard
+        )
 
-        saveButton
-            .controlSize =
-                .large
+        addSliderRow(
+            parent:
+                timingCard,
+            y:
+                137,
+            title:
+                "Wait before breathing out",
+            detail:
+                "Idle delay",
+            slider:
+                idleSlider,
+            value:
+                idleValue,
+            maxLabel:
+                "5 min"
+        )
 
-        saveButton
-            .keyEquivalent =
-                "\r"
+        addSliderRow(
+            parent:
+                timingCard,
+            y:
+                75,
+            title:
+                "Move from full visibility to rest",
+            detail:
+                "Breathe out",
+            slider:
+                exhaleSlider,
+            value:
+                exhaleValue,
+            maxLabel:
+                "5 min"
+        )
+
+        addSliderRow(
+            parent:
+                timingCard,
+            y:
+                13,
+            title:
+                "Return from rest to full visibility",
+            detail:
+                "Breathe in",
+            slider:
+                inhaleSlider,
+            value:
+                inhaleValue,
+            maxLabel:
+                "5 min"
+        )
+
+        let restTitle =
+            asymptaLabel(
+                "RESTING VISIBILITY",
+                size:
+                    11,
+                weight:
+                    .semibold,
+                color:
+                    AsymptaPalette
+                        .muted
+            )
+
+        restTitle.frame =
+            CGRect(
+                x:
+                    252,
+                y:
+                    190,
+                width:
+                    170,
+                height:
+                    20
+            )
+
+        root.addSubview(
+            restTitle
+        )
+
+        let restCard =
+            AsymptaCardView(
+                frame:
+                    CGRect(
+                        x:
+                            248,
+                        y:
+                            96,
+                        width:
+                            438,
+                        height:
+                            88
+                    )
+            )
+
+        root.addSubview(
+            restCard
+        )
+
+        addSliderRow(
+            parent:
+                restCard,
+            y:
+                18,
+            title:
+                "How much rested content remains visible",
+            detail:
+                "0–100%",
+            slider:
+                restingSlider,
+            value:
+                restingValue,
+            maxLabel:
+                "100%"
+        )
 
         let cancel =
             NSButton(
@@ -2166,118 +2555,215 @@ private final class BreatheSettingsController:
                     )
             )
 
-        cancel
-            .bezelStyle =
-                .rounded
+        cancel.bezelStyle =
+            .rounded
 
-        let actionRow =
-            NSStackView(
-                views: [
-                    NSView(),
-                    cancel,
-                    saveButton
-                ]
+        cancel.frame =
+            CGRect(
+                x:
+                    490,
+                y:
+                    36,
+                width:
+                    88,
+                height:
+                    34
             )
 
-        actionRow.orientation =
-            .horizontal
+        root.addSubview(
+            cancel
+        )
 
-        actionRow.alignment =
-            .centerY
-
-        actionRow.spacing =
-            10
-
-        let stack =
-            NSStackView(
-                views:
-                    [
-                        title,
-                        subtitle
-                    ]
-                    + rows
-                    + [
-                        actionRow
-                    ]
-            )
-
-        stack.orientation =
-            .vertical
-
-        stack.alignment =
-            .leading
-
-        stack.spacing =
-            18
-
-        stack
-            .translatesAutoresizingMaskIntoConstraints =
-                false
-
-        contentView
-            .addSubview(
-                stack
-            )
-
-        NSLayoutConstraint
-            .activate([
-                stack
-                    .leadingAnchor
-                    .constraint(
-                        equalTo:
-                            contentView
-                                .leadingAnchor,
-                        constant:
-                            28
-                    ),
-                stack
-                    .trailingAnchor
-                    .constraint(
-                        equalTo:
-                            contentView
-                                .trailingAnchor,
-                        constant:
-                            -28
-                    ),
-                stack
-                    .topAnchor
-                    .constraint(
-                        equalTo:
-                            contentView
-                                .topAnchor,
-                        constant:
-                            26
-                    ),
-                stack
-                    .bottomAnchor
-                    .constraint(
-                        lessThanOrEqualTo:
-                            contentView
-                                .bottomAnchor,
-                        constant:
-                            -24
-                    ),
-                subtitle
-                    .widthAnchor
-                    .constraint(
-                        equalTo:
-                            stack
-                                .widthAnchor
-                    ),
-                actionRow
-                    .widthAnchor
-                    .constraint(
-                        equalTo:
-                            stack
-                                .widthAnchor
-                    ),
-                saveButton
-                    .widthAnchor
-                    .constraint(
-                        greaterThanOrEqualToConstant:
-                            130
+        let save =
+            NSButton(
+                title:
+                    "Save & Apply",
+                target:
+                    self,
+                action:
+                    #selector(
+                        saveAndApply
                     )
-            ])
+            )
+
+        save.bezelStyle =
+            .rounded
+
+        save.keyEquivalent =
+            "\r"
+
+        save.contentTintColor =
+            AsymptaPalette
+                .quietBlue
+
+        save.frame =
+            CGRect(
+                x:
+                    586,
+                y:
+                    36,
+                width:
+                    100,
+                height:
+                    34
+            )
+
+        root.addSubview(
+            save
+        )
+
+        for slider
+            in [
+                idleSlider,
+                exhaleSlider,
+                inhaleSlider,
+                restingSlider
+            ] {
+            slider.isContinuous =
+                true
+
+            slider.target =
+                self
+
+            slider.action =
+                #selector(
+                    sliderChanged(
+                        _:
+                    )
+                )
+        }
+    }
+
+    private func addSliderRow(
+        parent:
+            NSView,
+        y:
+            CGFloat,
+        title:
+            String,
+        detail:
+            String,
+        slider:
+            NSSlider,
+        value:
+            NSTextField,
+        maxLabel:
+            String
+    ) {
+        let detailLabel =
+            asymptaLabel(
+                detail.uppercased(),
+                size:
+                    9,
+                weight:
+                    .semibold,
+                color:
+                    AsymptaPalette
+                        .quietBlue
+            )
+
+        detailLabel.frame =
+            CGRect(
+                x:
+                    18,
+                y:
+                    y + 34,
+                width:
+                    110,
+                height:
+                    14
+            )
+
+        parent.addSubview(
+            detailLabel
+        )
+
+        let titleLabel =
+            asymptaLabel(
+                title,
+                size:
+                    12
+            )
+
+        titleLabel.frame =
+            CGRect(
+                x:
+                    18,
+                y:
+                    y + 17,
+                width:
+                    280,
+                height:
+                    18
+            )
+
+        parent.addSubview(
+            titleLabel
+        )
+
+        slider.frame =
+            CGRect(
+                x:
+                    18,
+                y:
+                    y,
+                width:
+                    310,
+                height:
+                    18
+            )
+
+        parent.addSubview(
+            slider
+        )
+
+        value.alignment =
+            .right
+
+        value.frame =
+            CGRect(
+                x:
+                    336,
+                y:
+                    y + 17,
+                width:
+                    82,
+                height:
+                    18
+            )
+
+        parent.addSubview(
+            value
+        )
+
+        let maxField =
+            asymptaLabel(
+                maxLabel,
+                size:
+                    9,
+                color:
+                    AsymptaPalette
+                        .muted
+            )
+
+        maxField.alignment =
+            .right
+
+        maxField.frame =
+            CGRect(
+                x:
+                    336,
+                y:
+                    y,
+                width:
+                    82,
+                height:
+                    14
+            )
+
+        parent.addSubview(
+            maxField
+        )
     }
 
     private func installActivationObserver() {
@@ -2305,189 +2791,6 @@ private final class BreatheSettingsController:
                 }
     }
 
-    private func makeRow(
-        title:
-            String,
-        detail:
-            String,
-        slider:
-            NSSlider,
-        value:
-            NSTextField,
-        minLabel:
-            String,
-        maxLabel:
-            String
-    ) -> NSView {
-        let titleLabel =
-            NSTextField(
-                labelWithString:
-                    title
-            )
-
-        titleLabel.font =
-            .systemFont(
-                ofSize:
-                    14,
-                weight:
-                    .semibold
-            )
-
-        value.font =
-            .monospacedDigitSystemFont(
-                ofSize:
-                    13,
-                weight:
-                    .medium
-            )
-
-        value.alignment =
-            .right
-
-        let header =
-            NSStackView(
-                views: [
-                    titleLabel,
-                    NSView(),
-                    value
-                ]
-            )
-
-        header.orientation =
-            .horizontal
-
-        header.alignment =
-            .centerY
-
-        let detailLabel =
-            NSTextField(
-                labelWithString:
-                    detail
-            )
-
-        detailLabel
-            .font =
-                .systemFont(
-                    ofSize:
-                        11
-                )
-
-        detailLabel
-            .textColor =
-                .secondaryLabelColor
-
-        let minField =
-            NSTextField(
-                labelWithString:
-                    minLabel
-            )
-
-        let maxField =
-            NSTextField(
-                labelWithString:
-                    maxLabel
-            )
-
-        for endpoint
-            in [
-                minField,
-                maxField
-            ] {
-            endpoint
-                .font =
-                    .systemFont(
-                        ofSize:
-                            10
-                    )
-
-            endpoint
-                .textColor =
-                    .tertiaryLabelColor
-        }
-
-        let endpoints =
-            NSStackView(
-                views: [
-                    minField,
-                    NSView(),
-                    maxField
-                ]
-            )
-
-        endpoints.orientation =
-            .horizontal
-
-        let row =
-            NSStackView(
-                views: [
-                    header,
-                    detailLabel,
-                    slider,
-                    endpoints
-                ]
-            )
-
-        row.orientation =
-            .vertical
-
-        row.alignment =
-            .leading
-
-        row.spacing =
-            5
-
-        slider
-            .translatesAutoresizingMaskIntoConstraints =
-                false
-
-        header
-            .translatesAutoresizingMaskIntoConstraints =
-                false
-
-        endpoints
-            .translatesAutoresizingMaskIntoConstraints =
-                false
-
-        NSLayoutConstraint
-            .activate([
-                row
-                    .widthAnchor
-                    .constraint(
-                        greaterThanOrEqualToConstant:
-                            500
-                    ),
-                header
-                    .widthAnchor
-                    .constraint(
-                        equalTo:
-                            row
-                                .widthAnchor
-                    ),
-                slider
-                    .widthAnchor
-                    .constraint(
-                        equalTo:
-                            row
-                                .widthAnchor
-                    ),
-                endpoints
-                    .widthAnchor
-                    .constraint(
-                        equalTo:
-                            row
-                                .widthAnchor
-                    ),
-                value
-                    .widthAnchor
-                    .constraint(
-                        greaterThanOrEqualToConstant:
-                            78
-                    )
-            ])
-
-        return row
-    }
-
     @objc
     private func sliderChanged(
         _ sender:
@@ -2495,42 +2798,34 @@ private final class BreatheSettingsController:
     ) {
         if sender
             === idleSlider {
-            idleSlider
-                .doubleValue =
-                    roundedTime(
-                        sender
-                            .doubleValue
-                    )
+            idleSlider.doubleValue =
+                roundedTime(
+                    sender.doubleValue
+                )
         } else if sender
             === exhaleSlider {
-            exhaleSlider
-                .doubleValue =
-                    roundedTime(
-                        sender
-                            .doubleValue
-                    )
+            exhaleSlider.doubleValue =
+                roundedTime(
+                    sender.doubleValue
+                )
         } else if sender
             === inhaleSlider {
-            inhaleSlider
-                .doubleValue =
-                    roundedTime(
-                        sender
-                            .doubleValue
-                    )
+            inhaleSlider.doubleValue =
+                roundedTime(
+                    sender.doubleValue
+                )
         } else if sender
             === restingSlider {
-            restingSlider
-                .doubleValue =
-                    min(
-                        max(
-                            round(
-                                sender
-                                    .doubleValue
-                            ),
-                            0
+            restingSlider.doubleValue =
+                min(
+                    max(
+                        round(
+                            sender.doubleValue
                         ),
-                        100
-                    )
+                        0
+                    ),
+                    100
+                )
         }
 
         refreshLabels()
@@ -2542,24 +2837,20 @@ private final class BreatheSettingsController:
             Values(
                 idle:
                     roundedTime(
-                        idleSlider
-                            .doubleValue
+                        idleSlider.doubleValue
                     ),
                 exhale:
                     roundedTime(
-                        exhaleSlider
-                            .doubleValue
+                        exhaleSlider.doubleValue
                     ),
                 inhale:
                     roundedTime(
-                        inhaleSlider
-                            .doubleValue
+                        inhaleSlider.doubleValue
                     ),
                 resting:
                     min(
                         max(
-                            restingSlider
-                                .doubleValue
+                            restingSlider.doubleValue
                             / 100,
                             0
                         ),
@@ -2594,30 +2885,23 @@ private final class BreatheSettingsController:
     }
 
     private func refreshLabels() {
-        idleValue
-            .stringValue =
-                formatTime(
-                    idleSlider
-                        .doubleValue
-                )
+        idleValue.stringValue =
+            formatTime(
+                idleSlider.doubleValue
+            )
 
-        exhaleValue
-            .stringValue =
-                formatTime(
-                    exhaleSlider
-                        .doubleValue
-                )
+        exhaleValue.stringValue =
+            formatTime(
+                exhaleSlider.doubleValue
+            )
 
-        inhaleValue
-            .stringValue =
-                formatTime(
-                    inhaleSlider
-                        .doubleValue
-                )
+        inhaleValue.stringValue =
+            formatTime(
+                inhaleSlider.doubleValue
+            )
 
-        restingValue
-            .stringValue =
-                "\(Int(round(restingSlider.doubleValue)))%"
+        restingValue.stringValue =
+            "\(Int(round(restingSlider.doubleValue)))%"
     }
 
     private func formatTime(
