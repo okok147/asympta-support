@@ -4266,6 +4266,179 @@ final class AppDelegate:
         rebuildMenu()
     }
 
+    private func installWorkspaceObservers() {
+        guard
+            workspaceObservers
+                .isEmpty
+        else {
+            return
+        }
+
+        let center =
+            NSWorkspace
+                .shared
+                .notificationCenter
+
+        let activated =
+            center
+                .addObserver(
+                    forName:
+                        NSWorkspace
+                            .didActivateApplicationNotification,
+                    object:
+                        nil,
+                    queue:
+                        .main
+                ) {
+                    [weak self]
+                    note in
+
+                    Task {
+                        @MainActor in
+
+                        guard
+                            let self,
+                            self.mainStarted,
+                            !self.settingsWindowVisible,
+                            let app =
+                                note
+                                    .userInfo?[
+                                        NSWorkspace
+                                            .applicationUserInfoKey
+                                    ]
+                                as? NSRunningApplication
+                        else {
+                            return
+                        }
+
+                        guard
+                            let current =
+                                self.session
+                        else {
+                            self
+                                .scheduleIdleTimer()
+                            return
+                        }
+
+                        let pid =
+                            app
+                                .processIdentifier
+
+                        if current
+                            .remainingPIDs
+                            .contains(
+                                pid
+                            ) {
+                            // The user's real app activation is authoritative.
+                            // Restore only that app; all other resting apps remain resting.
+                            self
+                                .breatheIn(
+                                    pid:
+                                        pid
+                                )
+                        } else {
+                            // A different real foreground app must visually outrank every
+                            // remaining resting representation.
+                            for overlay
+                                in current
+                                    .overlays {
+                                let overlayPID =
+                                    overlay
+                                        .target
+                                        .app
+                                        .processIdentifier
+
+                                guard
+                                    current
+                                        .remainingPIDs
+                                        .contains(
+                                            overlayPID
+                                        )
+                                else {
+                                    continue
+                                }
+
+                                overlay
+                                    .panel
+                                    .level =
+                                        .normal
+
+                                overlay
+                                    .panel
+                                    .orderBack(
+                                        nil
+                                    )
+                            }
+
+                            self
+                                .applyLayerOcclusion(
+                                    session:
+                                        current
+                                )
+                        }
+                    }
+                }
+
+        let terminated =
+            center
+                .addObserver(
+                    forName:
+                        NSWorkspace
+                            .didTerminateApplicationNotification,
+                    object:
+                        nil,
+                    queue:
+                        .main
+                ) {
+                    [weak self]
+                    note in
+
+                    Task {
+                        @MainActor in
+
+                        guard
+                            let self,
+                            let current =
+                                self.session,
+                            let app =
+                                note
+                                    .userInfo?[
+                                        NSWorkspace
+                                            .applicationUserInfoKey
+                                    ]
+                                as? NSRunningApplication
+                        else {
+                            return
+                        }
+
+                        let pid =
+                            app
+                                .processIdentifier
+
+                        guard
+                            current
+                                .remainingPIDs
+                                .contains(
+                                    pid
+                                )
+                        else {
+                            return
+                        }
+
+                        self
+                            .breatheIn(
+                                pid:
+                                    pid
+                            )
+                    }
+                }
+
+        workspaceObservers = [
+            activated,
+            terminated
+        ]
+    }
+
     private func refreshPermissions() {
         let screen =
             CGPreflightScreenCaptureAccess()
@@ -5830,6 +6003,11 @@ final class AppDelegate:
             return nil
         }
 
+        let ownPID =
+            ProcessInfo
+                .processInfo
+                .processIdentifier
+
         for info
             in list {
             guard
@@ -5842,6 +6020,8 @@ final class AppDelegate:
                         as? NSNumber
                     )?
                     .int32Value,
+                pid
+                    != ownPID,
                 let layer =
                     (
                         info[
