@@ -1607,16 +1607,6 @@ private final class FadeSession {
         hoveredWindowID =
             nil
 
-        for overlay
-            in overlays {
-            overlay
-                .liveStream?
-                .stop()
-
-            overlay
-                .liveStream =
-                    nil
-        }
     }
 }
 
@@ -4341,11 +4331,11 @@ final class AppDelegate:
                 .start()
 
         installWorkspaceObservers()
-        scheduleIdleTimer()
 
         mainStarted =
             true
 
+        scheduleIdleTimer()
         rebuildMenu()
 
         showWelcomeIfNeeded()
