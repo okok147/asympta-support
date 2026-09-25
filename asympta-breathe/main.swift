@@ -1622,10 +1622,14 @@ private final class WelcomeWindowController:
             NSWindow(
                 contentRect:
                     NSRect(
-                        x: 0,
-                        y: 0,
-                        width: 540,
-                        height: 360
+                        x:
+                            0,
+                        y:
+                            0,
+                        width:
+                            590,
+                        height:
+                            390
                     ),
                 styleMask: [
                     .titled
@@ -1639,9 +1643,20 @@ private final class WelcomeWindowController:
         window.title =
             "Asympta Breathe"
 
-        window
-            .isReleasedWhenClosed =
-                false
+        window.titlebarAppearsTransparent =
+            true
+
+        window.titleVisibility =
+            .hidden
+
+        window.isMovableByWindowBackground =
+            true
+
+        window.backgroundColor =
+            AsymptaPalette.paper
+
+        window.isReleasedWhenClosed =
+            false
 
         window.center()
 
@@ -1668,95 +1683,185 @@ private final class WelcomeWindowController:
 
     private func configureUI() {
         guard
-            let contentView =
-                window?
-                    .contentView
+            let window
         else {
             return
         }
 
-        let iconView =
-            NSImageView()
+        let root =
+            AsymptaPaperView(
+                frame:
+                    window
+                        .contentView?
+                        .bounds
+                    ?? .zero
+            )
 
-        iconView.image =
-            NSApp
-                .applicationIconImage
+        root.autoresizingMask = [
+            .width,
+            .height
+        ]
 
-        iconView
-            .imageScaling =
-                .scaleProportionallyUpOrDown
+        window.contentView =
+            root
 
-        iconView
-            .translatesAutoresizingMaskIntoConstraints =
-                false
+        let mark =
+            asymptaLabel(
+                "◯",
+                size:
+                    48,
+                weight:
+                    .light,
+                color:
+                    AsymptaPalette
+                        .quietBlue
+            )
+
+        mark.frame =
+            CGRect(
+                x:
+                    42,
+                y:
+                    286,
+                width:
+                    70,
+                height:
+                    58
+            )
+
+        root.addSubview(
+            mark
+        )
 
         let eyebrow =
-            NSTextField(
-                labelWithString:
-                    "WELCOME"
-            )
-
-        eyebrow.font =
-            .systemFont(
-                ofSize:
-                    12,
+            asymptaLabel(
+                "WELCOME",
+                size:
+                    10,
                 weight:
-                    .semibold
+                    .semibold,
+                color:
+                    AsymptaPalette
+                        .quietBlue
             )
 
-        eyebrow
-            .textColor =
-                .secondaryLabelColor
+        eyebrow.frame =
+            CGRect(
+                x:
+                    126,
+                y:
+                    321,
+                width:
+                    120,
+                height:
+                    18
+            )
+
+        root.addSubview(
+            eyebrow
+        )
 
         let title =
-            NSTextField(
-                labelWithString:
-                    "Welcome to Asympta Breathe"
-            )
-
-        title.font =
-            .systemFont(
-                ofSize:
+            asymptaLabel(
+                "Welcome to Asympta Breathe",
+                size:
                     27,
                 weight:
                     .semibold
             )
 
+        title.frame =
+            CGRect(
+                x:
+                    126,
+                y:
+                    280,
+                width:
+                    410,
+                height:
+                    40
+            )
+
+        root.addSubview(
+            title
+        )
+
+        let card =
+            AsymptaCardView(
+                frame:
+                    CGRect(
+                        x:
+                            42,
+                        y:
+                            112,
+                        width:
+                            506,
+                        height:
+                            138
+                    )
+            )
+
+        root.addSubview(
+            card
+        )
+
         let body =
-            NSTextField(
-                wrappingLabelWithString:
-                    "Enjoy a calmer desktop. When you pause, your open windows breathe out. "
-                    + "Move the pointer over a resting window to preview it more clearly, "
-                    + "then click the app you want to bring back."
+            asymptaLabel(
+                "When you pause, unused windows breathe out quietly. "
+                + "Move over a resting window to preview it, then click the app you want back.",
+                size:
+                    13,
+                color:
+                    AsymptaPalette
+                        .muted
             )
 
-        body.font =
-            .systemFont(
-                ofSize:
-                    14
+        body.frame =
+            CGRect(
+                x:
+                    18,
+                y:
+                    64,
+                width:
+                    470,
+                height:
+                    54
             )
 
-        body
-            .textColor =
-                .secondaryLabelColor
+        body.maximumNumberOfLines =
+            3
+
+        card.addSubview(
+            body
+        )
 
         let hint =
-            NSTextField(
-                wrappingLabelWithString:
-                    "Resting opacity and all three timing phases are adjustable from the menu bar."
-            )
-
-        hint.font =
-            .systemFont(
-                ofSize:
-                    12,
+            asymptaLabel(
+                "Timing, inhale, exhale and resting visibility stay under your control.",
+                size:
+                    11,
                 weight:
-                    .medium
+                    .medium,
+                color:
+                    AsymptaPalette
+                        .quietBlue
             )
 
-        hint
-            .textColor =
-                .secondaryLabelColor
+        hint.frame =
+            CGRect(
+                x:
+                    18,
+                y:
+                    28,
+                width:
+                    470,
+                height:
+                    24
+            )
+
+        card.addSubview(
+            hint
+        )
 
         let startButton =
             NSButton(
@@ -1770,142 +1875,62 @@ private final class WelcomeWindowController:
                     )
             )
 
-        startButton
-            .bezelStyle =
-                .rounded
+        startButton.bezelStyle =
+            .rounded
 
-        startButton
-            .controlSize =
-                .large
+        startButton.controlSize =
+            .large
 
-        startButton
-            .keyEquivalent =
-                "\r"
+        startButton.contentTintColor =
+            AsymptaPalette
+                .quietBlue
 
-        let stack =
-            NSStackView(
-                views: [
-                    eyebrow,
-                    title,
-                    body,
-                    hint,
-                    NSView(),
-                    startButton
-                ]
+        startButton.keyEquivalent =
+            "\r"
+
+        startButton.frame =
+            CGRect(
+                x:
+                    360,
+                y:
+                    48,
+                width:
+                    188,
+                height:
+                    36
             )
 
-        stack.orientation =
-            .vertical
+        root.addSubview(
+            startButton
+        )
 
-        stack.alignment =
-            .leading
-
-        stack.spacing =
-            14
-
-        stack
-            .translatesAutoresizingMaskIntoConstraints =
-                false
-
-        contentView
-            .addSubview(
-                iconView
+        let whisper =
+            asymptaLabel(
+                "less noise · more you",
+                size:
+                    11,
+                weight:
+                    .medium,
+                color:
+                    AsymptaPalette
+                        .quietBlue
             )
 
-        contentView
-            .addSubview(
-                stack
+        whisper.frame =
+            CGRect(
+                x:
+                    42,
+                y:
+                    54,
+                width:
+                    180,
+                height:
+                    20
             )
 
-        NSLayoutConstraint
-            .activate([
-                iconView
-                    .leadingAnchor
-                    .constraint(
-                        equalTo:
-                            contentView
-                                .leadingAnchor,
-                        constant:
-                            30
-                    ),
-                iconView
-                    .topAnchor
-                    .constraint(
-                        equalTo:
-                            contentView
-                                .topAnchor,
-                        constant:
-                            32
-                    ),
-                iconView
-                    .widthAnchor
-                    .constraint(
-                        equalToConstant:
-                            70
-                    ),
-                iconView
-                    .heightAnchor
-                    .constraint(
-                        equalToConstant:
-                            70
-                    ),
-                stack
-                    .leadingAnchor
-                    .constraint(
-                        equalTo:
-                            iconView
-                                .trailingAnchor,
-                        constant:
-                            22
-                    ),
-                stack
-                    .trailingAnchor
-                    .constraint(
-                        equalTo:
-                            contentView
-                                .trailingAnchor,
-                        constant:
-                            -30
-                    ),
-                stack
-                    .topAnchor
-                    .constraint(
-                        equalTo:
-                            contentView
-                                .topAnchor,
-                        constant:
-                            32
-                    ),
-                stack
-                    .bottomAnchor
-                    .constraint(
-                        equalTo:
-                            contentView
-                                .bottomAnchor,
-                        constant:
-                            -28
-                    ),
-                body
-                    .widthAnchor
-                    .constraint(
-                        equalTo:
-                            stack
-                                .widthAnchor
-                    ),
-                hint
-                    .widthAnchor
-                    .constraint(
-                        equalTo:
-                            stack
-                                .widthAnchor
-                    ),
-                startButton
-                    .widthAnchor
-                    .constraint(
-                        greaterThanOrEqualToConstant:
-                            205
-                    )
-            ])
+        root.addSubview(
+            whisper
+        )
     }
 
     @objc
@@ -1913,6 +1938,7 @@ private final class WelcomeWindowController:
         onDone?()
     }
 }
+
 
 private final class AsymptaPaperView:
     NSView {
@@ -3190,6 +3216,18 @@ private final class PermissionGateController:
         window.title =
             "Asympta Breathe"
 
+        window.titlebarAppearsTransparent =
+            true
+
+        window.titleVisibility =
+            .hidden
+
+        window.isMovableByWindowBackground =
+            true
+
+        window.backgroundColor =
+            AsymptaPalette.paper
+
         window
             .isReleasedWhenClosed =
                 false
@@ -3221,24 +3259,39 @@ private final class PermissionGateController:
 
     private func configureUI() {
         guard
-            let contentView =
-                window?
-                    .contentView
+            let window
         else {
             return
         }
 
+        let root =
+            AsymptaPaperView(
+                frame:
+                    window
+                        .contentView?
+                        .bounds
+                    ?? .zero
+            )
+
+        root.autoresizingMask = [
+            .width,
+            .height
+        ]
+
+        window.contentView =
+            root
+
         stepLabel.font =
             .systemFont(
                 ofSize:
-                    12,
+                    10,
                 weight:
                     .semibold
             )
 
-        stepLabel
-            .textColor =
-                .secondaryLabelColor
+        stepLabel.textColor =
+            AsymptaPalette
+                .quietBlue
 
         titleLabel.font =
             .systemFont(
@@ -3248,27 +3301,31 @@ private final class PermissionGateController:
                     .semibold
             )
 
+        titleLabel.textColor =
+            AsymptaPalette
+                .ink
+
         bodyLabel.font =
             .systemFont(
                 ofSize:
-                    14
+                    13
             )
 
-        bodyLabel
-            .textColor =
-                .secondaryLabelColor
+        bodyLabel.textColor =
+            AsymptaPalette
+                .muted
 
         statusLabel.font =
             .systemFont(
                 ofSize:
-                    12,
+                    11,
                 weight:
                     .medium
             )
 
-        statusLabel
-            .textColor =
-                .secondaryLabelColor
+        statusLabel.textColor =
+            AsymptaPalette
+                .quietBlue
 
         approveButton.target =
             self
@@ -3278,17 +3335,132 @@ private final class PermissionGateController:
                 approveCurrentStep
             )
 
-        approveButton
-            .bezelStyle =
-                .rounded
+        approveButton.bezelStyle =
+            .rounded
 
-        approveButton
-            .controlSize =
-                .large
+        approveButton.controlSize =
+            .large
 
-        approveButton
-            .keyEquivalent =
-                "\r"
+        approveButton.contentTintColor =
+            AsymptaPalette
+                .quietBlue
+
+        approveButton.keyEquivalent =
+            "\r"
+
+        let mark =
+            asymptaLabel(
+                "◯",
+                size:
+                    42,
+                weight:
+                    .light,
+                color:
+                    AsymptaPalette
+                        .quietBlue
+            )
+
+        mark.frame =
+            CGRect(
+                x:
+                    32,
+                y:
+                    246,
+                width:
+                    62,
+                height:
+                    52
+            )
+
+        root.addSubview(
+            mark
+        )
+
+        let card =
+            AsymptaCardView(
+                frame:
+                    CGRect(
+                        x:
+                            104,
+                        y:
+                            82,
+                        width:
+                            382,
+                        height:
+                            210
+                    )
+            )
+
+        root.addSubview(
+            card
+        )
+
+        stepLabel.frame =
+            CGRect(
+                x:
+                    20,
+                y:
+                    168,
+                width:
+                    180,
+                height:
+                    18
+            )
+
+        titleLabel.frame =
+            CGRect(
+                x:
+                    20,
+                y:
+                    126,
+                width:
+                    340,
+                height:
+                    36
+            )
+
+        bodyLabel.frame =
+            CGRect(
+                x:
+                    20,
+                y:
+                    62,
+                width:
+                    340,
+                height:
+                    58
+            )
+
+        bodyLabel.maximumNumberOfLines =
+            4
+
+        statusLabel.frame =
+            CGRect(
+                x:
+                    20,
+                y:
+                    28,
+                width:
+                    340,
+                height:
+                    26
+            )
+
+        card.addSubview(
+            stepLabel
+        )
+
+        card.addSubview(
+            titleLabel
+        )
+
+        card.addSubview(
+            bodyLabel
+        )
+
+        card.addSubview(
+            statusLabel
+        )
 
         let quit =
             NSButton(
@@ -3302,123 +3474,68 @@ private final class PermissionGateController:
                     )
             )
 
-        quit
-            .bezelStyle =
-                .rounded
+        quit.bezelStyle =
+            .rounded
 
-        let buttonRow =
-            NSStackView(
-                views: [
-                    approveButton,
-                    NSView(),
-                    quit
-                ]
+        quit.frame =
+            CGRect(
+                x:
+                    32,
+                y:
+                    30,
+                width:
+                    76,
+                height:
+                    32
             )
 
-        buttonRow.orientation =
-            .horizontal
+        root.addSubview(
+            quit
+        )
 
-        buttonRow.alignment =
-            .centerY
-
-        let stack =
-            NSStackView(
-                views: [
-                    stepLabel,
-                    titleLabel,
-                    bodyLabel,
-                    statusLabel,
-                    NSView(),
-                    buttonRow
-                ]
+        approveButton.frame =
+            CGRect(
+                x:
+                    302,
+                y:
+                    28,
+                width:
+                    184,
+                height:
+                    36
             )
 
-        stack.orientation =
-            .vertical
+        root.addSubview(
+            approveButton
+        )
 
-        stack.alignment =
-            .leading
-
-        stack.spacing =
-            14
-
-        stack
-            .translatesAutoresizingMaskIntoConstraints =
-                false
-
-        contentView
-            .addSubview(
-                stack
+        let whisper =
+            asymptaLabel(
+                "only two permissions · only once",
+                size:
+                    10,
+                weight:
+                    .medium,
+                color:
+                    AsymptaPalette
+                        .muted
             )
 
-        NSLayoutConstraint
-            .activate([
-                stack
-                    .leadingAnchor
-                    .constraint(
-                        equalTo:
-                            contentView
-                                .leadingAnchor,
-                        constant:
-                            30
-                    ),
-                stack
-                    .trailingAnchor
-                    .constraint(
-                        equalTo:
-                            contentView
-                                .trailingAnchor,
-                        constant:
-                            -30
-                    ),
-                stack
-                    .topAnchor
-                    .constraint(
-                        equalTo:
-                            contentView
-                                .topAnchor,
-                        constant:
-                            28
-                    ),
-                stack
-                    .bottomAnchor
-                    .constraint(
-                        equalTo:
-                            contentView
-                                .bottomAnchor,
-                        constant:
-                            -24
-                    ),
-                bodyLabel
-                    .widthAnchor
-                    .constraint(
-                        equalTo:
-                            stack
-                                .widthAnchor
-                    ),
-                statusLabel
-                    .widthAnchor
-                    .constraint(
-                        equalTo:
-                            stack
-                                .widthAnchor
-                    ),
-                buttonRow
-                    .widthAnchor
-                    .constraint(
-                        equalTo:
-                            stack
-                                .widthAnchor
-                    ),
-                approveButton
-                    .widthAnchor
-                    .constraint(
-                        greaterThanOrEqualToConstant:
-                            220
-                    )
-            ])
+        whisper.frame =
+            CGRect(
+                x:
+                    118,
+                y:
+                    35,
+                width:
+                    170,
+                height:
+                    18
+            )
 
-        renderStep()
+        root.addSubview(
+            whisper
+        )
     }
 
     private func renderStep() {
@@ -6674,6 +6791,15 @@ final class AppDelegate:
             return
         }
 
+        // Text extraction does not need Retina full-window pixels.
+        // Cap at 1x to reduce per-keystroke GPU and memory bandwidth.
+        let typingCaptureScale:
+            CGFloat =
+                min(
+                    overlay.scale,
+                    1
+                )
+
         let config =
             SCStreamConfiguration()
 
@@ -6682,7 +6808,7 @@ final class AppDelegate:
                 1,
                 Int(
                     windowFrame.width
-                    * overlay.scale
+                    * typingCaptureScale
                 )
             )
 
@@ -6691,7 +6817,7 @@ final class AppDelegate:
                 1,
                 Int(
                     windowFrame.height
-                    * overlay.scale
+                    * typingCaptureScale
                 )
             )
 
@@ -6741,16 +6867,16 @@ final class AppDelegate:
                 CGRect(
                     x:
                         localRectPoints.minX
-                        * overlay.scale,
+                        * typingCaptureScale,
                     y:
                         localRectPoints.minY
-                        * overlay.scale,
+                        * typingCaptureScale,
                     width:
                         localRectPoints.width
-                        * overlay.scale,
+                        * typingCaptureScale,
                     height:
                         localRectPoints.height
-                        * overlay.scale
+                        * typingCaptureScale
                 )
 
             let previousFocus =
