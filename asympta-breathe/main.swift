@@ -4,6 +4,8 @@ import CoreGraphics
 import QuartzCore
 import ApplicationServices
 import CoreImage
+import CoreMedia
+import CoreVideo
 
 private let appBundleID = "com.asympta.breathe"
 private let permissionResetPendingKey = "permissionResetPending"
@@ -38,6 +40,205 @@ private struct PreparedOverlay {
     let borderImage: CGImage?
 }
 
+private final class LiveWindowStream:
+    NSObject,
+    SCStreamOutput {
+
+    private let stream:
+        SCStream
+
+    private let sampleQueue =
+        DispatchQueue(
+            label:
+                "com.asympta.breathe.live-window",
+            qos:
+                .userInteractive
+        )
+
+    private let onFrame:
+        @MainActor (CGImage) -> Void
+
+    private var stopped =
+        false
+
+    init(
+        window:
+            SCWindow,
+        width:
+            Int,
+        height:
+            Int,
+        framesPerSecond:
+            Int = 30,
+        onFrame:
+            @escaping @MainActor (CGImage) -> Void
+    ) throws {
+        self.onFrame =
+            onFrame
+
+        let filter =
+            SCContentFilter(
+                desktopIndependentWindow:
+                    window
+            )
+
+        let config =
+            SCStreamConfiguration()
+
+        config.width =
+            max(
+                1,
+                width
+            )
+
+        config.height =
+            max(
+                1,
+                height
+            )
+
+        config.showsCursor =
+            false
+
+        config.queueDepth =
+            3
+
+        config.shouldBeOpaque =
+            false
+
+        config.ignoreShadowsSingleWindow =
+            true
+
+        config.minimumFrameInterval =
+            CMTime(
+                value:
+                    1,
+                timescale:
+                    CMTimeScale(
+                        max(
+                            1,
+                            framesPerSecond
+                        )
+                    )
+            )
+
+        self.stream =
+            SCStream(
+                filter:
+                    filter,
+                configuration:
+                    config,
+                delegate:
+                    nil
+            )
+
+        super.init()
+
+        try self.stream
+            .addStreamOutput(
+                self,
+                type:
+                    .screen,
+                sampleHandlerQueue:
+                    sampleQueue
+            )
+    }
+
+    func start() {
+        Task {
+            [weak self] in
+
+            guard
+                let self,
+                !self.stopped
+            else {
+                return
+            }
+
+            try? await self
+                .stream
+                .startCapture()
+        }
+    }
+
+    func stop() {
+        guard
+            !stopped
+        else {
+            return
+        }
+
+        stopped =
+            true
+
+        Task {
+            [stream] in
+
+            try? await stream
+                .stopCapture()
+        }
+    }
+
+    func stream(
+        _ stream:
+            SCStream,
+        didOutputSampleBuffer sampleBuffer:
+            CMSampleBuffer,
+        of outputType:
+            SCStreamOutputType
+    ) {
+        guard
+            outputType
+                == .screen,
+            sampleBuffer
+                .isValid,
+            CMSampleBufferDataIsReady(
+                sampleBuffer
+            ),
+            let pixelBuffer =
+                CMSampleBufferGetImageBuffer(
+                    sampleBuffer
+                )
+        else {
+            return
+        }
+
+        let image =
+            CIImage(
+                cvPixelBuffer:
+                    pixelBuffer
+            )
+
+        guard
+            let cgImage =
+                ciContext
+                    .createCGImage(
+                        image,
+                        from:
+                            image.extent
+                    )
+        else {
+            return
+        }
+
+        Task {
+            @MainActor
+            [weak self] in
+
+            guard
+                let self,
+                !self.stopped
+            else {
+                return
+            }
+
+            self.onFrame(
+                cgImage
+            )
+        }
+    }
+}
+
 @MainActor
 private final class WindowOverlay {
     let target: VisibleWindowTarget
@@ -45,6 +246,9 @@ private final class WindowOverlay {
     let scale: CGFloat
     let panel: BreathPanel
     let view: BreathOverlayView
+
+    var liveStream:
+        LiveWindowStream?
 
     var textStyleFocusRect:
         CGRect?
@@ -888,6 +1092,17 @@ private final class FadeSession {
 
         hoveredWindowID =
             nil
+
+        for overlay
+            in overlays {
+            overlay
+                .liveStream?
+                .stop()
+
+            overlay
+                .liveStream =
+                    nil
+        }
     }
 }
 
@@ -4624,7 +4839,7 @@ final class AppDelegate:
             panel.contentView =
                 view
 
-            overlays.append(
+            let overlay =
                 WindowOverlay(
                     target:
                         item
@@ -4640,6 +4855,69 @@ final class AppDelegate:
                     view:
                         view
                 )
+
+            do {
+                let live =
+                    try LiveWindowStream(
+                        window:
+                            item
+                                .scWindow,
+                        width:
+                            max(
+                                1,
+                                Int(
+                                    item
+                                        .target
+                                        .window
+                                        .cgFrame
+                                        .width
+                                    * item
+                                        .scale
+                                )
+                            ),
+                        height:
+                            max(
+                                1,
+                                Int(
+                                    item
+                                        .target
+                                        .window
+                                        .cgFrame
+                                        .height
+                                    * item
+                                        .scale
+                                )
+                            ),
+                        framesPerSecond:
+                            30
+                    ) {
+                        [weak overlay]
+                        image in
+
+                        guard
+                            let overlay
+                        else {
+                            return
+                        }
+
+                        overlay
+                            .view
+                            .setContentImage(
+                                image
+                            )
+                    }
+
+                overlay.liveStream =
+                    live
+
+                live.start()
+            } catch {
+                // Keep the initial captured frame if a live stream cannot start.
+                // Never substitute another window or desktop composition here.
+            }
+
+            overlays.append(
+                overlay
             )
         }
 
@@ -4729,9 +5007,10 @@ final class AppDelegate:
         session:
             FadeSession
     ) {
-        // Real CGWindow order is front-to-back. Each Breathe overlay gets a
-        // layer mask that removes portions physically covered by windows above it.
-        // This prevents a back overlay from painting over a front window.
+        // Real CGWindow order is front-to-back. Recompute continuously.
+        // Any real window that is currently in front — including a newly opened
+        // video/full-screen/media window — punches its area out of every resting
+        // overlay behind it. Breathed-out apps can never bleed into media above.
         let realWindows =
             collectVisibleWindows()
 
@@ -4977,6 +5256,12 @@ final class AppDelegate:
                         else {
                             return
                         }
+
+                        self
+                            .applyLayerOcclusion(
+                                session:
+                                    session
+                            )
 
                         self
                             .updateHoverPreview(
@@ -5826,6 +6111,14 @@ final class AppDelegate:
                     for overlay
                         in overlays {
                         overlay
+                            .liveStream?
+                            .stop()
+
+                        overlay
+                            .liveStream =
+                                nil
+
+                        overlay
                             .panel
                             .orderOut(
                                 nil
@@ -5916,6 +6209,14 @@ final class AppDelegate:
         for overlay
             in current
                 .overlays {
+            overlay
+                .liveStream?
+                .stop()
+
+            overlay
+                .liveStream =
+                    nil
+
             overlay
                 .panel
                 .orderOut(
