@@ -413,12 +413,14 @@ private final class LiveWindowStream:
     private let framesPerSecond:
         Int
 
-    private let sampleQueue =
+    private static let sampleQueue =
         DispatchQueue(
             label:
                 "com.asympta.breathe.live-window",
             qos:
-                .userInteractive
+                .userInteractive,
+            attributes:
+                .concurrent
         )
 
     private var stream:
@@ -542,7 +544,7 @@ private final class LiveWindowStream:
                     type:
                         .screen,
                     sampleHandlerQueue:
-                        sampleQueue
+                        Self.sampleQueue
                 )
 
             self.stream =
@@ -5746,13 +5748,9 @@ final class AppDelegate:
                     frame.height
             )
 
-        let scale =
-            backingScale(
-                for:
-                    target
-                        .window
-                        .appKitFrame
-            )
+        let scale:
+            CGFloat =
+                1
 
         let filter =
             SCContentFilter(
@@ -5896,22 +5894,37 @@ final class AppDelegate:
         let streamFPS:
             Int
 
+        let maximumStreamScale:
+            CGFloat
+
         switch prepared.count {
         case 0...2:
             streamFPS =
                 30
 
+            maximumStreamScale =
+                2
+
         case 3...4:
             streamFPS =
                 24
+
+            maximumStreamScale =
+                1.5
 
         case 5...8:
             streamFPS =
                 18
 
+            maximumStreamScale =
+                1.25
+
         default:
             streamFPS =
                 12
+
+            maximumStreamScale =
+                1
         }
 
         for item in prepared {
@@ -6025,8 +6038,10 @@ final class AppDelegate:
                                         .window
                                         .cgFrame
                                         .width
-                                    * item
-                                        .scale
+                                    * min(
+                                        item.scale,
+                                        maximumStreamScale
+                                    )
                                 )
                             ),
                         height:
@@ -6038,8 +6053,10 @@ final class AppDelegate:
                                         .window
                                         .cgFrame
                                         .height
-                                    * item
-                                        .scale
+                                    * min(
+                                        item.scale,
+                                        maximumStreamScale
+                                    )
                                 )
                             ),
                         framesPerSecond:
