@@ -4671,6 +4671,16 @@ final class AppDelegate:
 
     @objc
     private func openSettings() {
+        // Settings is never part of a resting session.
+        // Restore first, then show the protected settings surface.
+        breatheInImmediately()
+
+        idleTimer?
+            .invalidate()
+
+        idleTimer =
+            nil
+
         let controller:
             BreatheSettingsController
 
@@ -4712,7 +4722,7 @@ final class AppDelegate:
                     return
                 }
 
-                // Commit the complete settings snapshot as one user action.
+                // Commit the full draft atomically from the user's point of view.
                 self.idleSeconds =
                     values.idle
 
@@ -4734,13 +4744,20 @@ final class AppDelegate:
                 created?
                     .stop()
 
-                if self?
+                guard
+                    let self
+                else {
+                    return
+                }
+
+                if self
                     .settingsController
                     === created {
-                    self?
-                        .settingsController =
-                            nil
+                    self.settingsController =
+                        nil
                 }
+
+                self.scheduleIdleTimer()
             }
 
             settingsController =
@@ -4766,35 +4783,84 @@ final class AppDelegate:
             .bringToFront()
     }
 
-    private func tick() {
-        refreshPermissions()
-
+    private func handleActivity(
+        _ kind:
+            ActivityKind
+    ) {
         guard
-            mainStarted,
-            screenPermission,
-            accessibilityPermission,
-            enabled,
-            !settingsWindowVisible
+            mainStarted
         else {
             return
         }
 
         if session != nil {
+            // Once resting, pointer/scroll/keyboard do not wake the whole desktop.
+            // Hover, live typing, and click-restore are handled by session-specific logic.
             return
         }
 
+        scheduleIdleTimer()
+    }
+
+    private func scheduleIdleTimer() {
+        idleTimer?
+            .invalidate()
+
+        idleTimer =
+            nil
+
         guard
-            preparationTask == nil
+            mainStarted,
+            enabled,
+            !settingsWindowVisible,
+            session == nil,
+            preparationTask == nil,
+            screenPermission,
+            accessibilityPermission
         else {
             return
         }
 
-        let idle =
-            secondsSinceRelevantInput()
+        let delay =
+            max(
+                0,
+                idleSeconds
+            )
+
+        idleTimer =
+            Timer
+                .scheduledTimer(
+                    withTimeInterval:
+                        delay,
+                    repeats:
+                        false
+                ) {
+                    [weak self]
+                    _ in
+
+                    Task {
+                        @MainActor in
+
+                        self?
+                            .beginScheduledBreathe()
+                    }
+                }
+    }
+
+    private func beginScheduledBreathe() {
+        idleTimer =
+            nil
+
+        refreshPermissions()
 
         guard
-            idle
-            >= idleSeconds
+            mainStarted,
+            enabled,
+            screenPermission,
+            accessibilityPermission,
+            !settingsWindowVisible,
+            session == nil,
+            preparationTask == nil
         else {
             return
         }
@@ -4813,36 +4879,6 @@ final class AppDelegate:
             targets:
                 targets
         )
-    }
-
-    private func secondsSinceRelevantInput()
-        -> Double {
-        let types:
-            [CGEventType] = [
-                .mouseMoved,
-                .leftMouseDragged,
-                .rightMouseDragged,
-                .otherMouseDragged,
-                .leftMouseDown,
-                .rightMouseDown,
-                .otherMouseDown,
-                .scrollWheel,
-                .keyDown,
-                .flagsChanged
-            ]
-
-        return
-            types
-                .map {
-                    CGEventSource
-                        .secondsSinceLastEventType(
-                            .combinedSessionState,
-                            eventType:
-                                $0
-                        )
-                }
-                .min()
-            ?? .greatestFiniteMagnitude
     }
 
     @objc
