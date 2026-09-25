@@ -46,6 +46,12 @@ private final class WindowOverlay {
     let panel: BreathPanel
     let view: BreathOverlayView
 
+    var textStyleFocusRect:
+        CGRect?
+
+    var textStyleColor:
+        CIColor?
+
     init(
         target: VisibleWindowTarget,
         scWindow: SCWindow,
@@ -254,13 +260,150 @@ private func makeAlphaEdgeImage(
         )
 }
 
+private func stableTextColor(
+    from image:
+        CGImage,
+    focusRect:
+        CGRect
+) -> CIColor {
+    let full =
+        CIImage(
+            cgImage:
+                image
+        )
+
+    let clipped =
+        focusRect
+            .intersection(
+                full.extent
+            )
+
+    guard
+        !clipped.isNull,
+        clipped.width > 2,
+        clipped.height > 2
+    else {
+        return
+            CIColor(
+                red: 0.96,
+                green: 0.96,
+                blue: 0.96,
+                alpha: 1
+            )
+    }
+
+    let average =
+        full
+            .cropped(
+                to:
+                    clipped
+            )
+            .applyingFilter(
+                "CIAreaAverage",
+                parameters: [
+                    kCIInputExtentKey:
+                        CIVector(
+                            cgRect:
+                                clipped
+                        )
+                ]
+            )
+
+    var rgba =
+        [UInt8](
+            repeating:
+                0,
+            count:
+                4
+        )
+
+    rgba
+        .withUnsafeMutableBytes {
+            buffer in
+
+            guard
+                let base =
+                    buffer
+                        .baseAddress
+            else {
+                return
+            }
+
+            ciContext
+                .render(
+                    average,
+                    toBitmap:
+                        base,
+                    rowBytes:
+                        4,
+                    bounds:
+                        CGRect(
+                            x: 0,
+                            y: 0,
+                            width: 1,
+                            height: 1
+                        ),
+                    format:
+                        .RGBA8,
+                    colorSpace:
+                        CGColorSpaceCreateDeviceRGB()
+                )
+        }
+
+    let r =
+        Double(
+            rgba[0]
+        )
+        / 255
+
+    let g =
+        Double(
+            rgba[1]
+        )
+        / 255
+
+    let b =
+        Double(
+            rgba[2]
+        )
+        / 255
+
+    let luminance =
+        0.2126 * r
+        + 0.7152 * g
+        + 0.0722 * b
+
+    if luminance > 0.56 {
+        return
+            CIColor(
+                red: 0.07,
+                green: 0.07,
+                blue: 0.07,
+                alpha: 1
+            )
+    }
+
+    return
+        CIColor(
+            red: 0.97,
+            green: 0.97,
+            blue: 0.97,
+            alpha: 1
+        )
+}
+
 private func makeTextOnlyImage(
-    from image: CGImage,
-    focusRect: CGRect
+    from image:
+        CGImage,
+    focusRect:
+        CGRect,
+    textColor:
+        CIColor
 ) -> CGImage? {
     let full =
         CIImage(
-            cgImage: image
+            cgImage:
+                image
         )
 
     let clipped =
@@ -284,11 +427,10 @@ private func makeTextOnlyImage(
     let focus =
         full
             .cropped(
-                to: clipped
+                to:
+                    clipped
             )
 
-    // Detect high-frequency foreground detail inside the editable control.
-    // This keeps glyphs/caret visible while leaving the field background covered.
     let mono =
         focus
             .applyingFilter(
@@ -300,11 +442,13 @@ private func makeTextOnlyImage(
             .applyingFilter(
                 "CIEdges",
                 parameters: [
-                    "inputIntensity": 2.6
+                    "inputIntensity":
+                        2.45
                 ]
             )
             .cropped(
-                to: clipped
+                to:
+                    clipped
             )
 
     let boosted =
@@ -312,13 +456,17 @@ private func makeTextOnlyImage(
             .applyingFilter(
                 "CIColorControls",
                 parameters: [
-                    "inputSaturation": 0,
-                    "inputBrightness": -0.12,
-                    "inputContrast": 4.2
+                    "inputSaturation":
+                        0,
+                    "inputBrightness":
+                        -0.14,
+                    "inputContrast":
+                        4.0
                 ]
             )
             .cropped(
-                to: clipped
+                to:
+                    clipped
             )
 
     let mask =
@@ -326,23 +474,39 @@ private func makeTextOnlyImage(
             .applyingFilter(
                 "CIMorphologyMaximum",
                 parameters: [
-                    "inputRadius": 1.35
+                    "inputRadius":
+                        1.25
                 ]
             )
             .cropped(
-                to: clipped
+                to:
+                    clipped
             )
 
     let clearFocus =
         CIImage(
-            color: .clear
+            color:
+                .clear
         )
         .cropped(
-            to: clipped
+            to:
+                clipped
+        )
+
+    // Only shape/content changes on each refresh.
+    // Color/style is frozen for the focused field until focus moves.
+    let stableForeground =
+        CIImage(
+            color:
+                textColor
+        )
+        .cropped(
+            to:
+                clipped
         )
 
     let revealed =
-        focus
+        stableForeground
             .applyingFilter(
                 "CIBlendWithMask",
                 parameters: [
@@ -353,28 +517,33 @@ private func makeTextOnlyImage(
                 ]
             )
             .cropped(
-                to: clipped
+                to:
+                    clipped
             )
 
     let clearFull =
         CIImage(
-            color: .clear
+            color:
+                .clear
         )
         .cropped(
-            to: full.extent
+            to:
+                full.extent
         )
 
     let composed =
         revealed
             .composited(
-                over: clearFull
+                over:
+                    clearFull
             )
 
     return
         ciContext
             .createCGImage(
                 composed,
-                from: full.extent
+                from:
+                    full.extent
             )
 }
 
@@ -1026,6 +1195,733 @@ private final class WelcomeWindowController:
     }
 }
 
+@MainActor
+private final class BreatheSettingsController:
+    NSWindowController {
+
+    var onIdleChanged:
+        ((Double) -> Void)?
+
+    var onExhaleChanged:
+        ((Double) -> Void)?
+
+    var onInhaleChanged:
+        ((Double) -> Void)?
+
+    var onRestingChanged:
+        ((Double) -> Void)?
+
+    private let idleSlider =
+        NSSlider(
+            value: 0,
+            minValue: 0,
+            maxValue: 300,
+            target: nil,
+            action: nil
+        )
+
+    private let exhaleSlider =
+        NSSlider(
+            value: 0,
+            minValue: 0,
+            maxValue: 300,
+            target: nil,
+            action: nil
+        )
+
+    private let inhaleSlider =
+        NSSlider(
+            value: 0,
+            minValue: 0,
+            maxValue: 300,
+            target: nil,
+            action: nil
+        )
+
+    private let restingSlider =
+        NSSlider(
+            value: 0,
+            minValue: 0,
+            maxValue: 100,
+            target: nil,
+            action: nil
+        )
+
+    private let idleValue =
+        NSTextField(
+            labelWithString:
+                ""
+        )
+
+    private let exhaleValue =
+        NSTextField(
+            labelWithString:
+                ""
+        )
+
+    private let inhaleValue =
+        NSTextField(
+            labelWithString:
+                ""
+        )
+
+    private let restingValue =
+        NSTextField(
+            labelWithString:
+                ""
+        )
+
+    init(
+        idle:
+            Double,
+        exhale:
+            Double,
+        inhale:
+            Double,
+        resting:
+            Double
+    ) {
+        let window =
+            NSWindow(
+                contentRect:
+                    NSRect(
+                        x: 0,
+                        y: 0,
+                        width: 560,
+                        height: 430
+                    ),
+                styleMask: [
+                    .titled,
+                    .closable
+                ],
+                backing:
+                    .buffered,
+                defer:
+                    false
+            )
+
+        window.title =
+            "Asympta Breathe Settings"
+
+        window
+            .isReleasedWhenClosed =
+                false
+
+        window.center()
+
+        super.init(
+            window:
+                window
+        )
+
+        idleSlider
+            .doubleValue =
+                idle
+
+        exhaleSlider
+            .doubleValue =
+                exhale
+
+        inhaleSlider
+            .doubleValue =
+                inhale
+
+        restingSlider
+            .doubleValue =
+                resting
+                * 100
+
+        configureUI()
+        refreshLabels()
+    }
+
+    required init?(
+        coder:
+            NSCoder
+    ) {
+        fatalError(
+            "init(coder:) has not been implemented"
+        )
+    }
+
+    func update(
+        idle:
+            Double,
+        exhale:
+            Double,
+        inhale:
+            Double,
+        resting:
+            Double
+    ) {
+        idleSlider
+            .doubleValue =
+                idle
+
+        exhaleSlider
+            .doubleValue =
+                exhale
+
+        inhaleSlider
+            .doubleValue =
+                inhale
+
+        restingSlider
+            .doubleValue =
+                resting
+                * 100
+
+        refreshLabels()
+    }
+
+    private func configureUI() {
+        guard
+            let contentView =
+                window?
+                    .contentView
+        else {
+            return
+        }
+
+        let title =
+            NSTextField(
+                labelWithString:
+                    "Breathe"
+            )
+
+        title.font =
+            .systemFont(
+                ofSize:
+                    26,
+                weight:
+                    .semibold
+            )
+
+        let subtitle =
+            NSTextField(
+                wrappingLabelWithString:
+                    "Adjust the three timing phases and how visible windows remain while resting. "
+                    + "Changes apply immediately."
+            )
+
+        subtitle
+            .font =
+                .systemFont(
+                    ofSize:
+                        13
+                )
+
+        subtitle
+            .textColor =
+                .secondaryLabelColor
+
+        for slider
+            in [
+                idleSlider,
+                exhaleSlider,
+                inhaleSlider,
+                restingSlider
+            ] {
+            slider
+                .isContinuous =
+                    true
+
+            slider.target =
+                self
+
+            slider.action =
+                #selector(
+                    sliderChanged(
+                        _:
+                    )
+                )
+        }
+
+        let rows = [
+            makeRow(
+                title:
+                    "Idle delay",
+                detail:
+                    "Wait before breathing out",
+                slider:
+                    idleSlider,
+                value:
+                    idleValue,
+                minLabel:
+                    "0s",
+                maxLabel:
+                    "5m"
+            ),
+            makeRow(
+                title:
+                    "Exhale",
+                detail:
+                    "Time from full visibility to rest",
+                slider:
+                    exhaleSlider,
+                value:
+                    exhaleValue,
+                minLabel:
+                    "0s",
+                maxLabel:
+                    "5m"
+            ),
+            makeRow(
+                title:
+                    "Inhale",
+                detail:
+                    "Time from rest back to full visibility",
+                slider:
+                    inhaleSlider,
+                value:
+                    inhaleValue,
+                minLabel:
+                    "0s",
+                maxLabel:
+                    "5m"
+            ),
+            makeRow(
+                title:
+                    "Resting content",
+                detail:
+                    "How much of the front app layer stays visible",
+                slider:
+                    restingSlider,
+                value:
+                    restingValue,
+                minLabel:
+                    "0%",
+                maxLabel:
+                    "100%"
+            )
+        ]
+
+        let stack =
+            NSStackView(
+                views:
+                    [
+                        title,
+                        subtitle
+                    ]
+                    + rows
+            )
+
+        stack.orientation =
+            .vertical
+
+        stack.alignment =
+            .leading
+
+        stack.spacing =
+            18
+
+        stack
+            .translatesAutoresizingMaskIntoConstraints =
+                false
+
+        contentView
+            .addSubview(
+                stack
+            )
+
+        NSLayoutConstraint
+            .activate([
+                stack
+                    .leadingAnchor
+                    .constraint(
+                        equalTo:
+                            contentView
+                                .leadingAnchor,
+                        constant:
+                            28
+                    ),
+                stack
+                    .trailingAnchor
+                    .constraint(
+                        equalTo:
+                            contentView
+                                .trailingAnchor,
+                        constant:
+                            -28
+                    ),
+                stack
+                    .topAnchor
+                    .constraint(
+                        equalTo:
+                            contentView
+                                .topAnchor,
+                        constant:
+                            26
+                    ),
+                stack
+                    .bottomAnchor
+                    .constraint(
+                        lessThanOrEqualTo:
+                            contentView
+                                .bottomAnchor,
+                        constant:
+                            -24
+                    ),
+                subtitle
+                    .widthAnchor
+                    .constraint(
+                        equalTo:
+                            stack
+                                .widthAnchor
+                    )
+            ])
+    }
+
+    private func makeRow(
+        title:
+            String,
+        detail:
+            String,
+        slider:
+            NSSlider,
+        value:
+            NSTextField,
+        minLabel:
+            String,
+        maxLabel:
+            String
+    ) -> NSView {
+        let titleLabel =
+            NSTextField(
+                labelWithString:
+                    title
+            )
+
+        titleLabel.font =
+            .systemFont(
+                ofSize:
+                    14,
+                weight:
+                    .semibold
+            )
+
+        value.font =
+            .monospacedDigitSystemFont(
+                ofSize:
+                    13,
+                weight:
+                    .medium
+            )
+
+        value.alignment =
+            .right
+
+        let header =
+            NSStackView(
+                views: [
+                    titleLabel,
+                    NSView(),
+                    value
+                ]
+            )
+
+        header.orientation =
+            .horizontal
+
+        header.alignment =
+            .centerY
+
+        let detailLabel =
+            NSTextField(
+                labelWithString:
+                    detail
+            )
+
+        detailLabel
+            .font =
+                .systemFont(
+                    ofSize:
+                        11
+                )
+
+        detailLabel
+            .textColor =
+                .secondaryLabelColor
+
+        let minField =
+            NSTextField(
+                labelWithString:
+                    minLabel
+            )
+
+        let maxField =
+            NSTextField(
+                labelWithString:
+                    maxLabel
+            )
+
+        for endpoint
+            in [
+                minField,
+                maxField
+            ] {
+            endpoint
+                .font =
+                    .systemFont(
+                        ofSize:
+                            10
+                    )
+
+            endpoint
+                .textColor =
+                    .tertiaryLabelColor
+        }
+
+        let endpoints =
+            NSStackView(
+                views: [
+                    minField,
+                    NSView(),
+                    maxField
+                ]
+            )
+
+        endpoints.orientation =
+            .horizontal
+
+        let row =
+            NSStackView(
+                views: [
+                    header,
+                    detailLabel,
+                    slider,
+                    endpoints
+                ]
+            )
+
+        row.orientation =
+            .vertical
+
+        row.alignment =
+            .leading
+
+        row.spacing =
+            5
+
+        slider
+            .translatesAutoresizingMaskIntoConstraints =
+                false
+
+        header
+            .translatesAutoresizingMaskIntoConstraints =
+                false
+
+        endpoints
+            .translatesAutoresizingMaskIntoConstraints =
+                false
+
+        NSLayoutConstraint
+            .activate([
+                row
+                    .widthAnchor
+                    .constraint(
+                        greaterThanOrEqualToConstant:
+                            500
+                    ),
+                header
+                    .widthAnchor
+                    .constraint(
+                        equalTo:
+                            row
+                                .widthAnchor
+                    ),
+                slider
+                    .widthAnchor
+                    .constraint(
+                        equalTo:
+                            row
+                                .widthAnchor
+                    ),
+                endpoints
+                    .widthAnchor
+                    .constraint(
+                        equalTo:
+                            row
+                                .widthAnchor
+                    ),
+                value
+                    .widthAnchor
+                    .constraint(
+                        greaterThanOrEqualToConstant:
+                            78
+                    )
+            ])
+
+        return row
+    }
+
+    @objc
+    private func sliderChanged(
+        _ sender:
+            NSSlider
+    ) {
+        if sender
+            === idleSlider {
+            let value =
+                roundedTime(
+                    sender
+                        .doubleValue
+                )
+
+            idleSlider
+                .doubleValue =
+                    value
+
+            onIdleChanged?(
+                value
+            )
+        } else if sender
+            === exhaleSlider {
+            let value =
+                roundedTime(
+                    sender
+                        .doubleValue
+                )
+
+            exhaleSlider
+                .doubleValue =
+                    value
+
+            onExhaleChanged?(
+                value
+            )
+        } else if sender
+            === inhaleSlider {
+            let value =
+                roundedTime(
+                    sender
+                        .doubleValue
+                )
+
+            inhaleSlider
+                .doubleValue =
+                    value
+
+            onInhaleChanged?(
+                value
+            )
+        } else if sender
+            === restingSlider {
+            let percent =
+                min(
+                    max(
+                        round(
+                            sender
+                                .doubleValue
+                        ),
+                        0
+                    ),
+                    100
+                )
+
+            restingSlider
+                .doubleValue =
+                    percent
+
+            onRestingChanged?(
+                percent
+                / 100
+            )
+        }
+
+        refreshLabels()
+    }
+
+    private func roundedTime(
+        _ value:
+            Double
+    ) -> Double {
+        min(
+            max(
+                round(
+                    value
+                    * 10
+                )
+                / 10,
+                0
+            ),
+            300
+        )
+    }
+
+    private func refreshLabels() {
+        idleValue
+            .stringValue =
+                formatTime(
+                    idleSlider
+                        .doubleValue
+                )
+
+        exhaleValue
+            .stringValue =
+                formatTime(
+                    exhaleSlider
+                        .doubleValue
+                )
+
+        inhaleValue
+            .stringValue =
+                formatTime(
+                    inhaleSlider
+                        .doubleValue
+                )
+
+        restingValue
+            .stringValue =
+                "\(Int(round(restingSlider.doubleValue)))%"
+    }
+
+    private func formatTime(
+        _ seconds:
+            Double
+    ) -> String {
+        if seconds
+            >= 60 {
+            let whole =
+                Int(
+                    round(
+                        seconds
+                    )
+                )
+
+            let minutes =
+                whole
+                / 60
+
+            let remainder =
+                whole
+                % 60
+
+            if remainder
+                == 0 {
+                return
+                    "\(minutes)m"
+            }
+
+            return
+                "\(minutes)m \(remainder)s"
+        }
+
+        if seconds.rounded()
+            == seconds {
+            return
+                "\(Int(seconds))s"
+        }
+
+        return
+            String(
+                format:
+                    "%.1fs",
+                seconds
+            )
+    }
+}
+
 private enum PermissionStep:
     Equatable {
     case screenRecording
@@ -1581,6 +2477,9 @@ final class AppDelegate:
     private var welcomeController:
         WelcomeWindowController?
 
+    private var settingsController:
+        BreatheSettingsController?
+
     private var mainStarted =
         false
 
@@ -1631,25 +2530,44 @@ final class AppDelegate:
     private var idleSeconds:
         Double {
         get {
-            let value =
+            guard
                 UserDefaults
                     .standard
-                    .double(
+                    .object(
                         forKey:
                             "idleSeconds"
                     )
+                != nil
+            else {
+                return 4
+            }
 
             return
-                value > 0
-                ? value
-                : 4
+                min(
+                    max(
+                        UserDefaults
+                            .standard
+                            .double(
+                                forKey:
+                                    "idleSeconds"
+                            ),
+                        0
+                    ),
+                    300
+                )
         }
 
         set {
             UserDefaults
                 .standard
                 .set(
-                    newValue,
+                    min(
+                        max(
+                            newValue,
+                            0
+                        ),
+                        300
+                    ),
                     forKey:
                         "idleSeconds"
                 )
@@ -1661,25 +2579,44 @@ final class AppDelegate:
     private var fadeSeconds:
         Double {
         get {
-            let value =
+            guard
                 UserDefaults
                     .standard
-                    .double(
+                    .object(
                         forKey:
                             "fadeSeconds"
                     )
+                != nil
+            else {
+                return 9
+            }
 
             return
-                value > 0
-                ? value
-                : 9
+                min(
+                    max(
+                        UserDefaults
+                            .standard
+                            .double(
+                                forKey:
+                                    "fadeSeconds"
+                            ),
+                        0
+                    ),
+                    300
+                )
         }
 
         set {
             UserDefaults
                 .standard
                 .set(
-                    newValue,
+                    min(
+                        max(
+                            newValue,
+                            0
+                        ),
+                        300
+                    ),
                     forKey:
                         "fadeSeconds"
                 )
@@ -1691,24 +2628,31 @@ final class AppDelegate:
     private var inhaleSeconds:
         Double {
         get {
-            let value =
+            guard
                 UserDefaults
                     .standard
-                    .double(
+                    .object(
                         forKey:
                             "inhaleSeconds"
                     )
+                != nil
+            else {
+                return 1.8
+            }
 
             return
-                value > 0
-                ? min(
+                min(
                     max(
-                        value,
-                        0.2
+                        UserDefaults
+                            .standard
+                            .double(
+                                forKey:
+                                    "inhaleSeconds"
+                            ),
+                        0
                     ),
-                    10
+                    300
                 )
-                : 1.8
         }
 
         set {
@@ -1718,9 +2662,9 @@ final class AppDelegate:
                     min(
                         max(
                             newValue,
-                            0.2
+                            0
                         ),
-                        10
+                        300
                     ),
                     forKey:
                         "inhaleSeconds"
@@ -1754,9 +2698,9 @@ final class AppDelegate:
                                 forKey:
                                     "restingOpacity"
                             ),
-                        0.02
+                        0
                     ),
-                    0.80
+                    1
                 )
         }
 
@@ -1767,9 +2711,9 @@ final class AppDelegate:
                     min(
                         max(
                             newValue,
-                            0.02
+                            0
                         ),
-                        0.80
+                        1
                     ),
                     forKey:
                         "restingOpacity"
@@ -1808,6 +2752,15 @@ final class AppDelegate:
                                 restingOpacity
                             )
                 }
+
+                session
+                    .hoveredWindowID =
+                        nil
+
+                updateHoverPreview(
+                    session:
+                        session
+                )
             }
 
             rebuildMenu()
@@ -1845,6 +2798,9 @@ final class AppDelegate:
 
         welcomeController?
             .stop()
+
+        settingsController?
+            .close()
 
         breatheInImmediately()
     }
@@ -1999,6 +2955,12 @@ final class AppDelegate:
             .stop()
 
         welcomeController =
+            nil
+
+        settingsController?
+            .close()
+
+        settingsController =
             nil
 
         breatheInImmediately()
@@ -2454,93 +3416,40 @@ final class AppDelegate:
             .separator()
         )
 
-        menu.addItem(
-            makeValueMenu(
+        let settings =
+            NSMenuItem(
                 title:
-                    "Idle delay",
-                current:
-                    idleSeconds,
-                values: [
-                    2,
-                    4,
-                    8,
-                    15,
-                    30
-                ],
-                selector:
+                    "Settings…",
+                action:
                     #selector(
-                        setIdleDelay(
-                            _:
-                        )
-                    )
+                        openSettings
+                    ),
+                keyEquivalent:
+                    ","
             )
-        )
+
+        settings.target =
+            self
 
         menu.addItem(
-            makeValueMenu(
-                title:
-                    "Exhale duration",
-                current:
-                    fadeSeconds,
-                values: [
-                    3,
-                    6,
-                    9,
-                    15,
-                    30
-                ],
-                selector:
-                    #selector(
-                        setFadeDuration(
-                            _:
-                        )
-                    )
-            )
+            settings
         )
 
-        menu.addItem(
-            makeValueMenu(
+        let timingSummary =
+            NSMenuItem(
                 title:
-                    "Inhale duration",
-                current:
-                    inhaleSeconds,
-                values: [
-                    0.6,
-                    1.2,
-                    1.8,
-                    3,
-                    5
-                ],
-                selector:
-                    #selector(
-                        setInhaleDuration(
-                            _:
-                        )
-                    )
+                    "Idle \(formatSettingTime(idleSeconds)) · Exhale \(formatSettingTime(fadeSeconds)) · Inhale \(formatSettingTime(inhaleSeconds)) · Rest \(Int(round(restingOpacity * 100)))%",
+                action:
+                    nil,
+                keyEquivalent:
+                    ""
             )
-        )
+
+        timingSummary.isEnabled =
+            false
 
         menu.addItem(
-            makePercentMenu(
-                title:
-                    "Resting content",
-                current:
-                    restingOpacity,
-                values: [
-                    0.05,
-                    0.10,
-                    0.15,
-                    0.20,
-                    0.30,
-                    0.40
-                ],
-                selector:
-                    #selector(
-                        setRestingOpacity(
-                            _:
-                        )
-                    )
-            )
+            timingSummary
         )
 
         let reset =
@@ -2643,137 +3552,144 @@ final class AppDelegate:
             menu
     }
 
-    private func makeValueMenu(
-        title:
-            String,
-        current:
-            Double,
-        values:
-            [Double],
-        selector:
-            Selector
-    ) -> NSMenuItem {
-        let parent =
-            NSMenuItem(
-                title:
-                    current.rounded() == current
-                    ? "\(title): \(Int(current))s"
-                    : "\(title): \(String(format: "%.1f", current))s",
-                action:
-                    nil,
-                keyEquivalent:
-                    ""
-            )
-
-        let submenu =
-            NSMenu()
-
-        for value in values {
-            let item =
-                NSMenuItem(
-                    title:
-                        value.rounded() == value
-                        ? "\(Int(value)) seconds"
-                        : "\(String(format: "%.1f", value)) seconds",
-                    action:
-                        selector,
-                    keyEquivalent:
-                        ""
+    private func formatSettingTime(
+        _ seconds:
+            Double
+    ) -> String {
+        if seconds
+            >= 60 {
+            let whole =
+                Int(
+                    round(
+                        seconds
+                    )
                 )
 
-            item.target =
-                self
+            let minutes =
+                whole
+                / 60
 
-            item
-                .representedObject =
-                    value
+            let remainder =
+                whole
+                % 60
 
-            item.state =
-                abs(
-                    value
-                    - current
-                ) < 0.001
-                ? .on
-                : .off
+            if remainder
+                == 0 {
+                return
+                    "\(minutes)m"
+            }
 
-            submenu.addItem(
-                item
-            )
+            return
+                "\(minutes)m\(remainder)s"
         }
 
-        parent.submenu =
-            submenu
+        if seconds.rounded()
+            == seconds {
+            return
+                "\(Int(seconds))s"
+        }
 
-        return parent
+        return
+            String(
+                format:
+                    "%.1fs",
+                seconds
+            )
     }
 
-    private func makePercentMenu(
-        title:
-            String,
-        current:
-            Double,
-        values:
-            [Double],
-        selector:
-            Selector
-    ) -> NSMenuItem {
-        let percent =
-            Int(
-                round(
-                    current
-                    * 100
-                )
+    @objc
+    private func openSettings() {
+        let controller:
+            BreatheSettingsController
+
+        if let existing =
+            settingsController {
+            controller =
+                existing
+
+            controller.update(
+                idle:
+                    idleSeconds,
+                exhale:
+                    fadeSeconds,
+                inhale:
+                    inhaleSeconds,
+                resting:
+                    restingOpacity
             )
-
-        let parent =
-            NSMenuItem(
-                title:
-                    "\(title): \(percent)%",
-                action:
-                    nil,
-                keyEquivalent:
-                    ""
-            )
-
-        let submenu =
-            NSMenu()
-
-        for value
-            in values {
-            let item =
-                NSMenuItem(
-                    title:
-                        "\(Int(round(value * 100)))%",
-                    action:
-                        selector,
-                    keyEquivalent:
-                        ""
+        } else {
+            let created =
+                BreatheSettingsController(
+                    idle:
+                        idleSeconds,
+                    exhale:
+                        fadeSeconds,
+                    inhale:
+                        inhaleSeconds,
+                    resting:
+                        restingOpacity
                 )
 
-            item.target =
-                self
+            created.onIdleChanged = {
+                [weak self]
+                value in
 
-            item
-                .representedObject =
-                    value
+                self?
+                    .idleSeconds =
+                        value
+            }
 
-            item.state =
-                abs(
-                    value
-                    - current
-                ) < 0.001
-                ? .on
-                : .off
+            created.onExhaleChanged = {
+                [weak self]
+                value in
 
-            submenu.addItem(
-                item
-            )
+                self?
+                    .fadeSeconds =
+                        value
+            }
+
+            created.onInhaleChanged = {
+                [weak self]
+                value in
+
+                self?
+                    .inhaleSeconds =
+                        value
+            }
+
+            created.onRestingChanged = {
+                [weak self]
+                value in
+
+                self?
+                    .restingOpacity =
+                        value
+            }
+
+            settingsController =
+                created
+
+            controller =
+                created
         }
 
-        parent.submenu =
-            submenu
+        controller
+            .showWindow(
+                nil
+            )
 
-        return parent
+        controller
+            .window?
+            .makeKeyAndOrderFront(
+                nil
+            )
+
+        _ =
+            NSRunningApplication
+                .current
+                .activate(
+                    options: []
+                )
     }
 
     private func tick() {
@@ -2887,62 +3803,6 @@ final class AppDelegate:
     @objc
     private func breatheInNow() {
         breatheInAll()
-    }
-
-    @objc
-    private func setIdleDelay(
-        _ sender:
-            NSMenuItem
-    ) {
-        if let value =
-            sender
-                .representedObject
-            as? Double {
-            idleSeconds =
-                value
-        }
-    }
-
-    @objc
-    private func setFadeDuration(
-        _ sender:
-            NSMenuItem
-    ) {
-        if let value =
-            sender
-                .representedObject
-            as? Double {
-            fadeSeconds =
-                value
-        }
-    }
-
-    @objc
-    private func setInhaleDuration(
-        _ sender:
-            NSMenuItem
-    ) {
-        if let value =
-            sender
-                .representedObject
-            as? Double {
-            inhaleSeconds =
-                value
-        }
-    }
-
-    @objc
-    private func setRestingOpacity(
-        _ sender:
-            NSMenuItem
-    ) {
-        if let value =
-            sender
-                .representedObject
-            as? Double {
-            restingOpacity =
-                value
-        }
     }
 
     @objc
@@ -4005,11 +4865,14 @@ final class AppDelegate:
 
         let hoverContentOpacity =
             min(
-                0.70,
+                1.0,
                 max(
-                    0.30,
-                    restingOpacity
-                    + 0.20
+                    restingOpacity,
+                    max(
+                        0.30,
+                        restingOpacity
+                        + 0.20
+                    )
                 )
             )
 
@@ -4352,12 +5215,63 @@ final class AppDelegate:
                     image
                 )
 
+            let previousFocus =
+                overlay
+                    .textStyleFocusRect
+
+            let focusChanged =
+                previousFocus
+                == nil
+                || abs(
+                    previousFocus!.minX
+                    - localRectPoints.minX
+                ) > 1
+                || abs(
+                    previousFocus!.minY
+                    - localRectPoints.minY
+                ) > 1
+                || abs(
+                    previousFocus!.width
+                    - localRectPoints.width
+                ) > 1
+                || abs(
+                    previousFocus!.height
+                    - localRectPoints.height
+                ) > 1
+
+            if focusChanged
+                || overlay
+                    .textStyleColor
+                    == nil {
+                overlay
+                    .textStyleFocusRect =
+                        localRectPoints
+
+                overlay
+                    .textStyleColor =
+                        stableTextColor(
+                            from:
+                                image,
+                            focusRect:
+                                pixelRect
+                        )
+            }
+
             let textOnly =
                 makeTextOnlyImage(
                     from:
                         image,
                     focusRect:
-                        pixelRect
+                        pixelRect,
+                    textColor:
+                        overlay
+                            .textStyleColor
+                        ?? CIColor(
+                            red: 0.97,
+                            green: 0.97,
+                            blue: 0.97,
+                            alpha: 1
+                        )
                 )
 
             for item
@@ -4391,6 +5305,14 @@ final class AppDelegate:
         for overlay
             in session
                 .overlays {
+            overlay
+                .textStyleFocusRect =
+                    nil
+
+            overlay
+                .textStyleColor =
+                    nil
+
             overlay
                 .view
                 .setTextReveal(
