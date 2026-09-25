@@ -9,8 +9,6 @@ import CoreMedia
 import CoreVideo
 
 private let appBundleID = "com.asympta.breathe"
-private let permissionResetPendingKey = "permissionResetPending"
-private let lastPermissionResetVersionKey = "lastPermissionResetVersion"
 private let didShowWelcomeKey = "didShowWelcomeAfterPermissions"
 
 private enum AsymptaPalette {
@@ -2024,10 +2022,34 @@ private final class AsymptaCardView:
         wantsLayer =
             true
 
+        let workspace =
+            NSWorkspace.shared
+
+        let cardColor =
+            workspace
+                .accessibilityDisplayShouldReduceTransparency
+            ? NSColor(
+                calibratedWhite:
+                    0.985,
+                alpha:
+                    1
+            )
+            : AsymptaPalette.card
+
+        let borderColor =
+            workspace
+                .accessibilityDisplayShouldIncreaseContrast
+            ? NSColor(
+                calibratedWhite:
+                    0.12,
+                alpha:
+                    0.18
+            )
+            : AsymptaPalette.hairline
+
         layer?
             .backgroundColor =
-                AsymptaPalette
-                    .card
+                cardColor
                     .cgColor
 
         layer?
@@ -2040,8 +2062,7 @@ private final class AsymptaCardView:
 
         layer?
             .borderColor =
-                AsymptaPalette
-                    .hairline
+                borderColor
                     .cgColor
     }
 
@@ -2095,7 +2116,8 @@ private func asymptaLabel(
 
 @MainActor
 private final class BreatheSettingsController:
-    NSWindowController {
+    NSWindowController,
+    NSWindowDelegate {
 
     struct Values {
         let idle:
@@ -2218,9 +2240,6 @@ private final class BreatheSettingsController:
                     .muted
         )
 
-    private var activationObserver:
-        NSObjectProtocol?
-
     init(
         idle:
             Double,
@@ -2273,9 +2292,10 @@ private final class BreatheSettingsController:
         window.alphaValue =
             1
 
-        // Breathe overlays are normal-level. Settings stays quietly above them.
+        // Settings is an ordinary app window until it becomes key.
+        // When selected, it rises above Breathe's normal-level overlays only.
         window.level =
-            .floating
+            .normal
 
         window.collectionBehavior = [
             .moveToActiveSpace,
@@ -2290,6 +2310,9 @@ private final class BreatheSettingsController:
                 window
         )
 
+        window.delegate =
+            self
+
         update(
             idle:
                 idle,
@@ -2302,7 +2325,6 @@ private final class BreatheSettingsController:
         )
 
         configureUI()
-        installActivationObserver()
     }
 
     required init?(
@@ -2315,17 +2337,6 @@ private final class BreatheSettingsController:
     }
 
     func stop() {
-        if let activationObserver {
-            NotificationCenter
-                .default
-                .removeObserver(
-                    activationObserver
-                )
-
-            self.activationObserver =
-                nil
-        }
-
         close()
     }
 
@@ -2898,6 +2909,17 @@ private final class BreatheSettingsController:
             slider
         )
 
+        slider
+            .setAccessibilityLabel(
+                detail
+            )
+
+        slider
+            .setAccessibilityHelp(
+                title
+                + ". Adjust with the arrow keys or pointer."
+            )
+
         value.alignment =
             .right
 
@@ -2945,31 +2967,6 @@ private final class BreatheSettingsController:
         parent.addSubview(
             maxField
         )
-    }
-
-    private func installActivationObserver() {
-        activationObserver =
-            NotificationCenter
-                .default
-                .addObserver(
-                    forName:
-                        NSWindow
-                            .didBecomeKeyNotification,
-                    object:
-                        window,
-                    queue:
-                        .main
-                ) {
-                    [weak self]
-                    _ in
-
-                    Task {
-                        @MainActor in
-
-                        self?
-                            .bringToFront()
-                    }
-                }
     }
 
     @objc
@@ -3040,11 +3037,44 @@ private final class BreatheSettingsController:
             )
         )
 
-        onClose?()
+        window?
+            .close()
     }
 
     @objc
     private func cancelSettings() {
+        window?
+            .close()
+    }
+
+    func windowDidBecomeKey(
+        _ notification:
+            Notification
+    ) {
+        window?
+            .alphaValue =
+                1
+
+        window?
+            .level =
+                .floating
+    }
+
+    func windowDidResignKey(
+        _ notification:
+            Notification
+    ) {
+        // Do not let Settings float above unrelated apps after the user
+        // intentionally switches away.
+        window?
+            .level =
+                .normal
+    }
+
+    func windowWillClose(
+        _ notification:
+            Notification
+    ) {
         onClose?()
     }
 
@@ -4141,75 +4171,8 @@ final class AppDelegate:
     }
 
     private func beginPermissionFlow() async {
-        let defaults =
-            UserDefaults.standard
-
-        let shortVersion =
-            Bundle.main
-                .object(
-                    forInfoDictionaryKey:
-                        "CFBundleShortVersionString"
-                ) as? String
-            ?? "unknown"
-
-        let buildVersion =
-            Bundle.main
-                .object(
-                    forInfoDictionaryKey:
-                        "CFBundleVersion"
-                ) as? String
-            ?? "unknown"
-
-        let currentVersionIdentity =
-            shortVersion
-            + "-"
-            + buildVersion
-
-        let lastResetVersion =
-            defaults.string(
-                forKey:
-                    lastPermissionResetVersionKey
-            )
-
-        if lastResetVersion
-            != currentVersionIdentity {
-            // First launch of THIS exact build:
-            // clear both old TCC approvals exactly once.
-            //
-            // The build identity is recorded before opening System Settings so
-            // a macOS-requested reopen of the same build never erases the
-            // permission the user just granted.
-            defaults.set(
-                currentVersionIdentity,
-                forKey:
-                    lastPermissionResetVersionKey
-            )
-
-            defaults.set(
-                true,
-                forKey:
-                    permissionResetPendingKey
-            )
-
-            _ =
-                resetAsymptaPermissions()
-
-            screenPermission =
-                false
-
-            accessibilityPermission =
-                false
-
-            showPermissionGate(
-                step:
-                    .screenRecording
-            )
-
-            return
-        }
-
-        // Same version being reopened: never reset again.
-        // Preserve whatever the user approved and continue the sequence.
+        // Public-release invariant: never clear TCC approvals automatically.
+        // Existing Screen Recording / Accessibility choices survive app updates.
         await evaluatePermissionFlow()
     }
 
@@ -4233,13 +4196,6 @@ final class AppDelegate:
 
         if screenVerified
             && accessibilityVerified {
-            UserDefaults
-                .standard
-                .removeObject(
-                    forKey:
-                        permissionResetPendingKey
-                )
-
             enterMainMode(
                 screenVerified:
                     true,
@@ -5249,9 +5205,6 @@ final class AppDelegate:
                  weak created]
                 in
 
-                created?
-                    .stop()
-
                 guard
                     let self
                 else {
@@ -5337,6 +5290,23 @@ final class AppDelegate:
         }
 
         scheduleIdleTimer()
+    }
+
+    private func motionAwareDuration(
+        _ requested:
+            Double
+    ) -> Double {
+        if NSWorkspace
+            .shared
+            .accessibilityDisplayShouldReduceMotion {
+            return
+                min(
+                    requested,
+                    0.18
+                )
+        }
+
+        return requested
     }
 
     private func scheduleIdleTimer() {
@@ -5497,14 +5467,6 @@ final class AppDelegate:
 
         _ =
             resetAsymptaPermissions()
-
-        UserDefaults
-            .standard
-            .set(
-                true,
-                forKey:
-                    permissionResetPendingKey
-            )
 
         screenPermission =
             false
@@ -6238,7 +6200,9 @@ final class AppDelegate:
                 context in
 
                 context.duration =
-                    fadeSeconds
+                    motionAwareDuration(
+                        fadeSeconds
+                    )
 
                 context.timingFunction =
                     CAMediaTimingFunction(
@@ -7253,7 +7217,9 @@ final class AppDelegate:
                 context in
 
                 context.duration =
-                    inhaleSeconds
+                    motionAwareDuration(
+                        inhaleSeconds
+                    )
 
                 context
                     .timingFunction =
@@ -7437,7 +7403,9 @@ final class AppDelegate:
         let duration =
             min(
                 max(
-                    inhaleSeconds,
+                    motionAwareDuration(
+                        inhaleSeconds
+                    ),
                     0
                 ),
                 1.5
