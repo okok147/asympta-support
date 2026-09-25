@@ -3679,6 +3679,9 @@ final class AppDelegate:
     private var settingsController:
         BreatheSettingsController?
 
+    private var settingsOpening =
+        false
+
     private var mainStarted =
         false
 
@@ -4199,6 +4202,9 @@ final class AppDelegate:
         settingsController =
             nil
 
+        settingsOpening =
+            false
+
         breatheInImmediately()
 
         idleTimer?
@@ -4382,6 +4388,9 @@ final class AppDelegate:
                 self?
                     .welcomeController =
                         nil
+
+                self?
+                    .scheduleIdleTimer()
             }
         }
 
@@ -5018,11 +5027,32 @@ final class AppDelegate:
         == true
     }
 
+    private var protectedBreatheUIVisible:
+        Bool {
+        settingsOpening
+        || settingsWindowVisible
+        || welcomeController?
+            .window?
+            .isVisible
+            == true
+        || permissionGate?
+            .window?
+            .isVisible
+            == true
+    }
+
     @objc
     private func openSettings() {
-        // Settings is never part of a resting session.
-        // Restore first, then show the protected settings surface.
-        breatheInImmediately()
+        guard
+            !settingsOpening
+        else {
+            settingsController?
+                .bringToFront()
+            return
+        }
+
+        settingsOpening =
+            true
 
         idleTimer?
             .invalidate()
@@ -5030,6 +5060,27 @@ final class AppDelegate:
         idleTimer =
             nil
 
+        preparationTask?
+            .cancel()
+
+        preparationTask =
+            nil
+
+        breatheInAllForSettings {
+            [weak self] in
+
+            guard
+                let self
+            else {
+                return
+            }
+
+            self
+                .presentSettingsWindow()
+        }
+    }
+
+    private func presentSettingsWindow() {
         let controller:
             BreatheSettingsController
 
@@ -5071,7 +5122,6 @@ final class AppDelegate:
                     return
                 }
 
-                // Commit the full draft atomically from the user's point of view.
                 self.idleSeconds =
                     values.idle
 
@@ -5105,6 +5155,9 @@ final class AppDelegate:
                     self.settingsController =
                         nil
                 }
+
+                self.settingsOpening =
+                    false
 
                 self.scheduleIdleTimer()
             }
@@ -5187,7 +5240,7 @@ final class AppDelegate:
         guard
             mainStarted,
             enabled,
-            !settingsWindowVisible,
+            !protectedBreatheUIVisible,
             session == nil,
             preparationTask == nil,
             screenPermission,
@@ -5233,7 +5286,7 @@ final class AppDelegate:
             enabled,
             screenPermission,
             accessibilityPermission,
-            !settingsWindowVisible,
+            !protectedBreatheUIVisible,
             session == nil,
             preparationTask == nil
         else {
@@ -5266,7 +5319,7 @@ final class AppDelegate:
         guard
             session == nil,
             preparationTask == nil,
-            !settingsWindowVisible
+            !protectedBreatheUIVisible
         else {
             return
         }
@@ -5374,7 +5427,7 @@ final class AppDelegate:
         guard
             session == nil,
             preparationTask == nil,
-            !settingsWindowVisible
+            !protectedBreatheUIVisible
         else {
             return
         }
@@ -7198,6 +7251,154 @@ final class AppDelegate:
                     pid
             )
         }
+    }
+
+    private func breatheInAllForSettings(
+        completion:
+            @escaping @MainActor () -> Void
+    ) {
+        preparationTask?
+            .cancel()
+
+        preparationTask =
+            nil
+
+        guard
+            let current =
+                session
+        else {
+            completion()
+            return
+        }
+
+        current
+            .cleanupMonitors()
+
+        let overlays =
+            current
+                .overlays
+                .filter {
+                    current
+                        .remainingPIDs
+                        .contains(
+                            $0
+                                .target
+                                .app
+                                .processIdentifier
+                        )
+                }
+
+        guard
+            !overlays
+                .isEmpty
+        else {
+            session =
+                nil
+
+            completion()
+            return
+        }
+
+        // Settings is a control surface, so it should never wait minutes to open.
+        // Preserve the user's inhale feel, but cap this protected transition.
+        let duration =
+            min(
+                max(
+                    inhaleSeconds,
+                    0
+                ),
+                1.5
+            )
+
+        NSAnimationContext
+            .runAnimationGroup {
+                context in
+
+                context.duration =
+                    duration
+
+                context.timingFunction =
+                    CAMediaTimingFunction(
+                        controlPoints:
+                            0.22,
+                        1,
+                        0.36,
+                        1
+                    )
+
+                context
+                    .allowsImplicitAnimation =
+                        true
+
+                for overlay
+                    in overlays {
+                    overlay
+                        .view
+                        .textImageView
+                        .isHidden =
+                            true
+
+                    overlay
+                        .view
+                        .borderImageView
+                        .alphaValue =
+                            0
+
+                    overlay
+                        .view
+                        .contentContainerView
+                        .animator()
+                        .alphaValue =
+                            1
+                }
+            } completionHandler: {
+                [weak self,
+                 weak current]
+                in
+
+                Task {
+                    @MainActor in
+
+                    guard
+                        let self,
+                        let current,
+                        self
+                            .session
+                            === current
+                    else {
+                        completion()
+                        return
+                    }
+
+                    for overlay
+                        in current
+                            .overlays {
+                        overlay
+                            .liveStream?
+                            .stop()
+
+                        overlay
+                            .liveStream =
+                                nil
+
+                        overlay
+                            .panel
+                            .orderOut(
+                                nil
+                            )
+
+                        overlay
+                            .panel
+                            .close()
+                    }
+
+                    self.session =
+                        nil
+
+                    self.rebuildMenu()
+                    completion()
+                }
+            }
     }
 
     private func breatheInImmediately() {
