@@ -1199,17 +1199,22 @@ private final class WelcomeWindowController:
 private final class BreatheSettingsController:
     NSWindowController {
 
-    var onIdleChanged:
-        ((Double) -> Void)?
+    struct Values {
+        let idle:
+            Double
+        let exhale:
+            Double
+        let inhale:
+            Double
+        let resting:
+            Double
+    }
 
-    var onExhaleChanged:
-        ((Double) -> Void)?
+    var onSave:
+        ((Values) -> Void)?
 
-    var onInhaleChanged:
-        ((Double) -> Void)?
-
-    var onRestingChanged:
-        ((Double) -> Void)?
+    var onClose:
+        (() -> Void)?
 
     private let idleSlider =
         NSSlider(
@@ -1271,6 +1276,19 @@ private final class BreatheSettingsController:
                 ""
         )
 
+    private let saveButton =
+        NSButton(
+            title:
+                "Save & Apply",
+            target:
+                nil,
+            action:
+                nil
+        )
+
+    private var activationObserver:
+        NSObjectProtocol?
+
     init(
         idle:
             Double,
@@ -1288,7 +1306,7 @@ private final class BreatheSettingsController:
                         x: 0,
                         y: 0,
                         width: 560,
-                        height: 430
+                        height: 470
                     ),
                 styleMask: [
                     .titled,
@@ -1307,6 +1325,25 @@ private final class BreatheSettingsController:
             .isReleasedWhenClosed =
                 false
 
+        // Settings is a protected Breathe surface.
+        // It must always remain fully opaque and above every Breathe overlay.
+        window.alphaValue =
+            1
+
+        window.level =
+            NSWindow.Level(
+                rawValue:
+                    NSWindow.Level
+                        .screenSaver
+                        .rawValue
+                    + 2
+            )
+
+        window.collectionBehavior = [
+            .canJoinAllSpaces,
+            .fullScreenAuxiliary
+        ]
+
         window.center()
 
         super.init(
@@ -1314,25 +1351,19 @@ private final class BreatheSettingsController:
                 window
         )
 
-        idleSlider
-            .doubleValue =
-                idle
-
-        exhaleSlider
-            .doubleValue =
-                exhale
-
-        inhaleSlider
-            .doubleValue =
-                inhale
-
-        restingSlider
-            .doubleValue =
+        update(
+            idle:
+                idle,
+            exhale:
+                exhale,
+            inhale:
+                inhale,
+            resting:
                 resting
-                * 100
+        )
 
         configureUI()
-        refreshLabels()
+        installActivationObserver()
     }
 
     required init?(
@@ -1342,6 +1373,21 @@ private final class BreatheSettingsController:
         fatalError(
             "init(coder:) has not been implemented"
         )
+    }
+
+    func stop() {
+        if let activationObserver {
+            NotificationCenter
+                .default
+                .removeObserver(
+                    activationObserver
+                )
+
+            self.activationObserver =
+                nil
+        }
+
+        close()
     }
 
     func update(
@@ -1374,6 +1420,34 @@ private final class BreatheSettingsController:
         refreshLabels()
     }
 
+    func bringToFront() {
+        guard
+            let window
+        else {
+            return
+        }
+
+        window.alphaValue =
+            1
+
+        window.level =
+            NSWindow.Level(
+                rawValue:
+                    NSWindow.Level
+                        .screenSaver
+                        .rawValue
+                    + 2
+            )
+
+        window
+            .orderFrontRegardless()
+
+        window
+            .makeKeyAndOrderFront(
+                nil
+            )
+    }
+
     private func configureUI() {
         guard
             let contentView =
@@ -1400,8 +1474,8 @@ private final class BreatheSettingsController:
         let subtitle =
             NSTextField(
                 wrappingLabelWithString:
-                    "Adjust the three timing phases and how visible windows remain while resting. "
-                    + "Changes apply immediately."
+                    "Adjust the three timing phases and resting visibility. "
+                    + "Changes stay as a draft until you choose Save & Apply."
             )
 
         subtitle
@@ -1496,6 +1570,60 @@ private final class BreatheSettingsController:
             )
         ]
 
+        saveButton.target =
+            self
+
+        saveButton.action =
+            #selector(
+                saveAndApply
+            )
+
+        saveButton
+            .bezelStyle =
+                .rounded
+
+        saveButton
+            .controlSize =
+                .large
+
+        saveButton
+            .keyEquivalent =
+                "\r"
+
+        let cancel =
+            NSButton(
+                title:
+                    "Cancel",
+                target:
+                    self,
+                action:
+                    #selector(
+                        cancelSettings
+                    )
+            )
+
+        cancel
+            .bezelStyle =
+                .rounded
+
+        let actionRow =
+            NSStackView(
+                views: [
+                    NSView(),
+                    cancel,
+                    saveButton
+                ]
+            )
+
+        actionRow.orientation =
+            .horizontal
+
+        actionRow.alignment =
+            .centerY
+
+        actionRow.spacing =
+            10
+
         let stack =
             NSStackView(
                 views:
@@ -1504,6 +1632,9 @@ private final class BreatheSettingsController:
                         subtitle
                     ]
                     + rows
+                    + [
+                        actionRow
+                    ]
             )
 
         stack.orientation =
@@ -1568,8 +1699,46 @@ private final class BreatheSettingsController:
                         equalTo:
                             stack
                                 .widthAnchor
+                    ),
+                actionRow
+                    .widthAnchor
+                    .constraint(
+                        equalTo:
+                            stack
+                                .widthAnchor
+                    ),
+                saveButton
+                    .widthAnchor
+                    .constraint(
+                        greaterThanOrEqualToConstant:
+                            130
                     )
             ])
+    }
+
+    private func installActivationObserver() {
+        activationObserver =
+            NotificationCenter
+                .default
+                .addObserver(
+                    forName:
+                        NSWindow
+                            .didBecomeKeyNotification,
+                    object:
+                        window,
+                    queue:
+                        .main
+                ) {
+                    [weak self]
+                    _ in
+
+                    Task {
+                        @MainActor in
+
+                        self?
+                            .bringToFront()
+                    }
+                }
     }
 
     private func makeRow(
@@ -1762,74 +1931,85 @@ private final class BreatheSettingsController:
     ) {
         if sender
             === idleSlider {
-            let value =
-                roundedTime(
-                    sender
-                        .doubleValue
-                )
-
             idleSlider
                 .doubleValue =
-                    value
-
-            onIdleChanged?(
-                value
-            )
+                    roundedTime(
+                        sender
+                            .doubleValue
+                    )
         } else if sender
             === exhaleSlider {
-            let value =
-                roundedTime(
-                    sender
-                        .doubleValue
-                )
-
             exhaleSlider
                 .doubleValue =
-                    value
-
-            onExhaleChanged?(
-                value
-            )
+                    roundedTime(
+                        sender
+                            .doubleValue
+                    )
         } else if sender
             === inhaleSlider {
-            let value =
-                roundedTime(
-                    sender
-                        .doubleValue
-                )
-
             inhaleSlider
                 .doubleValue =
-                    value
-
-            onInhaleChanged?(
-                value
-            )
+                    roundedTime(
+                        sender
+                            .doubleValue
+                    )
         } else if sender
             === restingSlider {
-            let percent =
-                min(
-                    max(
-                        round(
-                            sender
-                                .doubleValue
-                        ),
-                        0
-                    ),
-                    100
-                )
-
             restingSlider
                 .doubleValue =
-                    percent
-
-            onRestingChanged?(
-                percent
-                / 100
-            )
+                    min(
+                        max(
+                            round(
+                                sender
+                                    .doubleValue
+                            ),
+                            0
+                        ),
+                        100
+                    )
         }
 
         refreshLabels()
+    }
+
+    @objc
+    private func saveAndApply() {
+        onSave?(
+            Values(
+                idle:
+                    roundedTime(
+                        idleSlider
+                            .doubleValue
+                    ),
+                exhale:
+                    roundedTime(
+                        exhaleSlider
+                            .doubleValue
+                    ),
+                inhale:
+                    roundedTime(
+                        inhaleSlider
+                            .doubleValue
+                    ),
+                resting:
+                    min(
+                        max(
+                            restingSlider
+                                .doubleValue
+                            / 100,
+                            0
+                        ),
+                        1
+                    )
+            )
+        )
+
+        onClose?()
+    }
+
+    @objc
+    private func cancelSettings() {
+        onClose?()
     }
 
     private func roundedTime(
@@ -1921,6 +2101,7 @@ private final class BreatheSettingsController:
             )
     }
 }
+
 
 private enum PermissionStep:
     Equatable {
@@ -2800,7 +2981,7 @@ final class AppDelegate:
             .stop()
 
         settingsController?
-            .close()
+            .stop()
 
         breatheInImmediately()
     }
@@ -2958,7 +3139,7 @@ final class AppDelegate:
             nil
 
         settingsController?
-            .close()
+            .stop()
 
         settingsController =
             nil
@@ -3384,6 +3565,7 @@ final class AppDelegate:
             && accessibilityPermission
             && session == nil
             && preparationTask == nil
+            && !settingsWindowVisible
             && !collectVisibleWindows()
                 .isEmpty
 
@@ -3597,6 +3779,14 @@ final class AppDelegate:
             )
     }
 
+    private var settingsWindowVisible:
+        Bool {
+        settingsController?
+            .window?
+            .isVisible
+        == true
+    }
+
     @objc
     private func openSettings() {
         let controller:
@@ -3630,40 +3820,45 @@ final class AppDelegate:
                         restingOpacity
                 )
 
-            created.onIdleChanged = {
+            created.onSave = {
                 [weak self]
-                value in
+                values in
 
-                self?
-                    .idleSeconds =
-                        value
+                guard
+                    let self
+                else {
+                    return
+                }
+
+                // Commit the complete settings snapshot as one user action.
+                self.idleSeconds =
+                    values.idle
+
+                self.fadeSeconds =
+                    values.exhale
+
+                self.inhaleSeconds =
+                    values.inhale
+
+                self.restingOpacity =
+                    values.resting
             }
 
-            created.onExhaleChanged = {
-                [weak self]
-                value in
+            created.onClose = {
+                [weak self,
+                 weak created]
+                in
 
-                self?
-                    .fadeSeconds =
-                        value
-            }
+                created?
+                    .stop()
 
-            created.onInhaleChanged = {
-                [weak self]
-                value in
-
-                self?
-                    .inhaleSeconds =
-                        value
-            }
-
-            created.onRestingChanged = {
-                [weak self]
-                value in
-
-                self?
-                    .restingOpacity =
-                        value
+                if self?
+                    .settingsController
+                    === created {
+                    self?
+                        .settingsController =
+                            nil
+                }
             }
 
             settingsController =
@@ -3678,18 +3873,15 @@ final class AppDelegate:
                 nil
             )
 
-        controller
-            .window?
-            .makeKeyAndOrderFront(
-                nil
-            )
-
         _ =
             NSRunningApplication
                 .current
                 .activate(
                     options: []
                 )
+
+        controller
+            .bringToFront()
     }
 
     private func tick() {
@@ -3699,7 +3891,8 @@ final class AppDelegate:
             mainStarted,
             screenPermission,
             accessibilityPermission,
-            enabled
+            enabled,
+            !settingsWindowVisible
         else {
             return
         }
@@ -3779,7 +3972,8 @@ final class AppDelegate:
     private func breatheNow() {
         guard
             session == nil,
-            preparationTask == nil
+            preparationTask == nil,
+            !settingsWindowVisible
         else {
             return
         }
@@ -3886,7 +4080,8 @@ final class AppDelegate:
     ) {
         guard
             session == nil,
-            preparationTask == nil
+            preparationTask == nil,
+            !settingsWindowVisible
         else {
             return
         }
