@@ -1,4 +1,5 @@
 import AppKit
+import Sparkle
 import ScreenCaptureKit
 import AVFoundation
 import CoreGraphics
@@ -3793,6 +3794,47 @@ final class AppDelegate:
     private var menu:
         NSMenu!
 
+    private lazy var updaterController:
+        SPUStandardUpdaterController? = {
+        guard
+            let publicKey =
+                Bundle.main
+                    .object(
+                        forInfoDictionaryKey:
+                            "SUPublicEDKey"
+                    )
+                as? String,
+            !publicKey
+                .isEmpty,
+            let feedString =
+                Bundle.main
+                    .object(
+                        forInfoDictionaryKey:
+                            "SUFeedURL"
+                    )
+                as? String,
+            let feedURL =
+                URL(
+                    string:
+                        feedString
+                ),
+            feedURL.scheme
+                == "https"
+        else {
+            return nil
+        }
+
+        return
+            SPUStandardUpdaterController(
+                startingUpdater:
+                    true,
+                updaterDelegate:
+                    nil,
+                userDriverDelegate:
+                    nil
+            )
+    }()
+
     private var idleTimer:
         Timer?
 
@@ -4385,6 +4427,11 @@ final class AppDelegate:
             buildStatusItem()
         }
 
+        // Initialize Sparkle only in fully configured public builds.
+        // Development builds without SUPublicEDKey remain update-disabled.
+        _ =
+            updaterController
+
         activityMonitor.onActivity = {
             [weak self]
             kind in
@@ -4939,6 +4986,31 @@ final class AppDelegate:
             timingSummary
         )
 
+        let updateItem =
+            NSMenuItem(
+                title:
+                    "Check for Updates…",
+                action:
+                    #selector(
+                        checkForUpdates
+                    ),
+                keyEquivalent:
+                    ""
+            )
+
+        updateItem.target =
+            self
+
+        updateItem.isEnabled =
+            updaterController?
+                .updater
+                .canCheckForUpdates
+            ?? false
+
+        menu.addItem(
+            updateItem
+        )
+
         let reset =
             NSMenuItem(
                 title:
@@ -5422,6 +5494,14 @@ final class AppDelegate:
     @objc
     private func breatheInNow() {
         breatheInAll()
+    }
+
+    @objc
+    private func checkForUpdates() {
+        updaterController?
+            .checkForUpdates(
+                nil
+            )
     }
 
     @objc
