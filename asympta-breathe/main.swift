@@ -3869,13 +3869,26 @@ final class AppDelegate:
         let defaults =
             UserDefaults.standard
 
-        let currentVersion =
+        let shortVersion =
             Bundle.main
                 .object(
                     forInfoDictionaryKey:
                         "CFBundleShortVersionString"
                 ) as? String
             ?? "unknown"
+
+        let buildVersion =
+            Bundle.main
+                .object(
+                    forInfoDictionaryKey:
+                        "CFBundleVersion"
+                ) as? String
+            ?? "unknown"
+
+        let currentVersionIdentity =
+            shortVersion
+            + "-"
+            + buildVersion
 
         let lastResetVersion =
             defaults.string(
@@ -3884,15 +3897,15 @@ final class AppDelegate:
             )
 
         if lastResetVersion
-            != currentVersion {
-            // First launch of THIS app version:
+            != currentVersionIdentity {
+            // First launch of THIS exact build:
             // clear both old TCC approvals exactly once.
             //
-            // The version is recorded before opening System Settings so that
-            // a macOS-requested reopen of the same build does not erase the
+            // The build identity is recorded before opening System Settings so
+            // a macOS-requested reopen of the same build never erases the
             // permission the user just granted.
             defaults.set(
-                currentVersion,
+                currentVersionIdentity,
                 forKey:
                     lastPermissionResetVersionKey
             )
