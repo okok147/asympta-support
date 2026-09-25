@@ -5465,6 +5465,27 @@ final class AppDelegate:
             [WindowOverlay] =
                 []
 
+        let streamFPS:
+            Int
+
+        switch prepared.count {
+        case 0...2:
+            streamFPS =
+                30
+
+        case 3...4:
+            streamFPS =
+                24
+
+        case 5...8:
+            streamFPS =
+                18
+
+        default:
+            streamFPS =
+                12
+        }
+
         for item in prepared {
             let panel =
                 BreathPanel(
@@ -5499,8 +5520,10 @@ final class AppDelegate:
             panel.ignoresMouseEvents =
                 true
 
+            // Foreground invariant: a real app activated by the user must
+            // naturally be able to sit above Breathe.
             panel.level =
-                .screenSaver
+                .normal
 
             panel.collectionBehavior = [
                 .canJoinAllSpaces,
@@ -5592,7 +5615,7 @@ final class AppDelegate:
                                 )
                             ),
                         framesPerSecond:
-                            30
+                            streamFPS
                     ) {
                         [weak overlay]
                         image in
@@ -6697,25 +6720,21 @@ final class AppDelegate:
 
             remainingOverlay
                 .panel
-                .orderFrontRegardless()
+                .orderBack(
+                    nil
+                )
         }
 
-        // The selected overlay itself goes to the very front for the inhale
-        // transition. Its real app is activated underneath it at the same time.
+        // Remove the resting border immediately.
+        // The real app owns foreground activation; the transition overlay stays
+        // at ordinary window level so another user-selected app can still outrank it.
         for overlay
             in overlays {
             overlay
                 .panel
                 .level =
-                    .screenSaver
+                    .normal
 
-            overlay
-                .panel
-                .orderFrontRegardless()
-
-            // Selection no longer needs the resting outline.
-            // Remove the border immediately. The front app-content layer now
-            // breathes from resting opacity back to full opacity.
             overlay
                 .view
                 .borderImageView
@@ -6728,6 +6747,13 @@ final class AppDelegate:
                 .activate(
                     options: []
                 )
+
+        for overlay
+            in overlays {
+            overlay
+                .panel
+                .orderFrontRegardless()
+        }
 
         DispatchQueue
             .main
@@ -6861,6 +6887,9 @@ final class AppDelegate:
                         self
                             .session =
                                 nil
+
+                        self
+                            .scheduleIdleTimer()
                     }
 
                     self
@@ -6935,6 +6964,7 @@ final class AppDelegate:
             nil
 
         rebuildMenu()
+        scheduleIdleTimer()
     }
 
     private func collectVisibleWindows()
