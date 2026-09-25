@@ -1,5 +1,6 @@
 import AppKit
 import ScreenCaptureKit
+import AVFoundation
 import CoreGraphics
 import QuartzCore
 import ApplicationServices
@@ -391,10 +392,26 @@ private final class ActivityMonitor {
 
 private final class LiveWindowStream:
     NSObject,
-    SCStreamOutput {
+    SCStreamOutput,
+    SCStreamDelegate {
 
-    private let stream:
-        SCStream
+    var onFirstFrame:
+        (@MainActor () -> Void)?
+
+    private let scWindow:
+        SCWindow
+
+    private weak var displayLayer:
+        AVSampleBufferDisplayLayer?
+
+    private let width:
+        Int
+
+    private let height:
+        Int
+
+    private let framesPerSecond:
+        Int
 
     private let sampleQueue =
         DispatchQueue(
@@ -404,10 +421,13 @@ private final class LiveWindowStream:
                 .userInteractive
         )
 
-    private let onFrame:
-        @MainActor (CGImage) -> Void
+    private var stream:
+        SCStream?
 
     private var stopped =
+        false
+
+    private var deliveredFirstFrame =
         false
 
     init(
@@ -418,39 +438,73 @@ private final class LiveWindowStream:
         height:
             Int,
         framesPerSecond:
-            Int = 30,
-        onFrame:
-            @escaping @MainActor (CGImage) -> Void
-    ) throws {
-        self.onFrame =
-            onFrame
+            Int,
+        displayLayer:
+            AVSampleBufferDisplayLayer
+    ) {
+        self.scWindow =
+            window
+
+        self.width =
+            max(
+                1,
+                width
+            )
+
+        self.height =
+            max(
+                1,
+                height
+            )
+
+        self.framesPerSecond =
+            max(
+                8,
+                min(
+                    30,
+                    framesPerSecond
+                )
+            )
+
+        self.displayLayer =
+            displayLayer
+
+        super.init()
+    }
+
+    func start() {
+        guard
+            stream == nil,
+            !stopped
+        else {
+            return
+        }
 
         let filter =
             SCContentFilter(
                 desktopIndependentWindow:
-                    window
+                    scWindow
             )
 
         let config =
             SCStreamConfiguration()
 
         config.width =
-            max(
-                1,
-                width
-            )
+            width
 
         config.height =
-            max(
-                1,
-                height
-            )
+            height
 
         config.showsCursor =
             false
 
+        // Keep only two frames in flight. This bounds retained IOSurface memory
+        // without making animation/video feel starved.
         config.queueDepth =
             2
+
+        config.pixelFormat =
+            kCVPixelFormatType_32BGRA
 
         config.shouldBeOpaque =
             false
@@ -458,55 +512,57 @@ private final class LiveWindowStream:
         config.ignoreShadowsSingleWindow =
             true
 
+        config.capturesAudio =
+            false
+
         config.minimumFrameInterval =
             CMTime(
                 value:
                     1,
                 timescale:
                     CMTimeScale(
-                        max(
-                            1,
-                            framesPerSecond
-                        )
+                        framesPerSecond
                     )
             )
 
-        self.stream =
+        let stream =
             SCStream(
                 filter:
                     filter,
                 configuration:
                     config,
                 delegate:
-                    nil
+                    self
             )
 
-        super.init()
+        do {
+            try stream
+                .addStreamOutput(
+                    self,
+                    type:
+                        .screen,
+                    sampleHandlerQueue:
+                        sampleQueue
+                )
 
-        try self.stream
-            .addStreamOutput(
-                self,
-                type:
-                    .screen,
-                sampleHandlerQueue:
-                    sampleQueue
-            )
-    }
+            self.stream =
+                stream
 
-    func start() {
-        Task {
-            [weak self] in
+            Task {
+                [weak self,
+                 stream] in
 
-            guard
-                let self,
-                !self.stopped
-            else {
-                return
+                do {
+                    try await stream
+                        .startCapture()
+                } catch {
+                    self?.stream =
+                        nil
+                }
             }
-
-            try? await self
-                .stream
-                .startCapture()
+        } catch {
+            self.stream =
+                nil
         }
     }
 
@@ -520,9 +576,16 @@ private final class LiveWindowStream:
         stopped =
             true
 
-        Task {
-            [stream] in
+        guard
+            let stream
+        else {
+            return
+        }
 
+        self.stream =
+            nil
+
+        Task {
             try? await stream
                 .stopCapture()
         }
@@ -539,52 +602,80 @@ private final class LiveWindowStream:
         guard
             outputType
                 == .screen,
-            sampleBuffer
-                .isValid,
+            sampleBuffer.isValid,
             CMSampleBufferDataIsReady(
                 sampleBuffer
+            )
+        else {
+            return
+        }
+
+        if let attachments =
+            CMSampleBufferGetSampleAttachmentsArray(
+                sampleBuffer,
+                createIfNecessary:
+                    false
+            ) as? [[SCStreamFrameInfo: Any]],
+           let first =
+            attachments.first,
+           let raw =
+            first[
+                .status
+            ] as? Int,
+           let status =
+            SCFrameStatus(
+                rawValue:
+                    raw
             ),
-            let pixelBuffer =
-                CMSampleBufferGetImageBuffer(
+           status
+            != .complete {
+            return
+        }
+
+        let firstFrame =
+            !deliveredFirstFrame
+
+        deliveredFirstFrame =
+            true
+
+        DispatchQueue
+            .main
+            .async {
+                [weak self,
+                 sampleBuffer] in
+
+                guard
+                    let self,
+                    !self.stopped,
+                    let layer =
+                        self.displayLayer
+                else {
+                    return
+                }
+
+                if layer.status
+                    == .failed {
+                    layer.flush()
+                }
+
+                layer.enqueue(
                     sampleBuffer
                 )
-        else {
-            return
-        }
 
-        let image =
-            CIImage(
-                cvPixelBuffer:
-                    pixelBuffer
-            )
-
-        guard
-            let cgImage =
-                ciContext
-                    .createCGImage(
-                        image,
-                        from:
-                            image.extent
-                    )
-        else {
-            return
-        }
-
-        Task {
-            @MainActor
-            [weak self] in
-
-            guard
-                let self,
-                !self.stopped
-            else {
-                return
+                if firstFrame {
+                    self.onFirstFrame?()
+                }
             }
+    }
 
-            self.onFrame(
-                cgImage
-            )
-        }
+    func stream(
+        _ stream:
+            SCStream,
+        didStopWithError error:
+            Error
+    ) {
+        self.stream =
+            nil
     }
 }
 
@@ -1107,8 +1198,14 @@ private final class BreathOverlayView:
     let coverImageView =
         NSImageView()
 
+    let contentContainerView =
+        NSView()
+
     let contentImageView =
         NSImageView()
+
+    let liveContentLayer =
+        AVSampleBufferDisplayLayer()
 
     let textImageView =
         NSImageView()
@@ -1133,10 +1230,75 @@ private final class BreathOverlayView:
                 NSColor.clear
                     .cgColor
 
+        coverImageView.frame =
+            bounds
+
+        coverImageView
+            .autoresizingMask = [
+                .width,
+                .height
+            ]
+
+        coverImageView
+            .imageScaling =
+                .scaleAxesIndependently
+
+        addSubview(
+            coverImageView
+        )
+
+        contentContainerView.frame =
+            bounds
+
+        contentContainerView
+            .autoresizingMask = [
+                .width,
+                .height
+            ]
+
+        contentContainerView.wantsLayer =
+            true
+
+        contentImageView.frame =
+            contentContainerView
+                .bounds
+
+        contentImageView
+            .autoresizingMask = [
+                .width,
+                .height
+            ]
+
+        contentImageView
+            .imageScaling =
+                .scaleAxesIndependently
+
+        contentContainerView
+            .addSubview(
+                contentImageView
+            )
+
+        liveContentLayer
+            .videoGravity =
+                .resize
+
+        liveContentLayer
+            .backgroundColor =
+                NSColor.clear
+                    .cgColor
+
+        contentContainerView
+            .layer?
+            .addSublayer(
+                liveContentLayer
+            )
+
+        addSubview(
+            contentContainerView
+        )
+
         for imageView
             in [
-                coverImageView,
-                contentImageView,
                 textImageView,
                 borderImageView
             ] {
@@ -1166,13 +1328,11 @@ private final class BreathOverlayView:
             )
         }
 
-        // Back layer is always present. The front app-content layer
-        // breathes between resting opacity and full opacity.
         coverImageView
             .alphaValue =
                 1
 
-        contentImageView
+        contentContainerView
             .alphaValue =
                 1
 
@@ -1198,6 +1358,14 @@ private final class BreathOverlayView:
         )
     }
 
+    override func layout() {
+        super.layout()
+
+        liveContentLayer.frame =
+            contentContainerView
+                .bounds
+    }
+
     func install(
         background:
             CGImage,
@@ -1214,6 +1382,8 @@ private final class BreathOverlayView:
                     bounds.size
             )
 
+        // Initial fallback frame is released as soon as the live stream
+        // delivers its first sample, reducing per-window memory.
         contentImageView.image =
             NSImage(
                 cgImage:
@@ -1236,17 +1406,9 @@ private final class BreathOverlayView:
         }
     }
 
-    func setContentImage(
-        _ image:
-            CGImage
-    ) {
+    func markLiveFrameReady() {
         contentImageView.image =
-            NSImage(
-                cgImage:
-                    image,
-                size:
-                    bounds.size
-            )
+            nil
     }
 
     func setTextReveal(
@@ -1347,6 +1509,7 @@ private final class BreathOverlayView:
             mask
     }
 }
+
 
 private final class BreathPanel:
     NSPanel {
@@ -3790,7 +3953,7 @@ final class AppDelegate:
 
                     overlay
                         .view
-                        .contentImageView
+                        .contentContainerView
                         .alphaValue =
                             CGFloat(
                                 restingOpacity
@@ -5770,7 +5933,7 @@ final class AppDelegate:
 
             do {
                 let live =
-                    try LiveWindowStream(
+                    LiveWindowStream(
                         window:
                             item
                                 .scWindow,
@@ -5801,23 +5964,18 @@ final class AppDelegate:
                                 )
                             ),
                         framesPerSecond:
-                            streamFPS
-                    ) {
-                        [weak overlay]
-                        image in
+                            streamFPS,
+                        displayLayer:
+                            view
+                                .liveContentLayer
+                    )
 
-                        guard
-                            let overlay
-                        else {
-                            return
-                        }
+                live.onFirstFrame = {
+                    [weak view] in
 
-                        overlay
-                            .view
-                            .setContentImage(
-                                image
-                            )
-                    }
+                    view?
+                        .markLiveFrameReady()
+                }
 
                 overlay.liveStream =
                     live
@@ -5896,7 +6054,7 @@ final class AppDelegate:
                     in overlays {
                     overlay
                         .view
-                        .contentImageView
+                        .contentContainerView
                         .animator()
                         .alphaValue =
                             CGFloat(
@@ -6317,7 +6475,7 @@ final class AppDelegate:
 
                     overlay
                         .view
-                        .contentImageView
+                        .contentContainerView
                         .animator()
                         .alphaValue =
                             CGFloat(
@@ -6599,12 +6757,6 @@ final class AppDelegate:
                     height:
                         localRectPoints.height
                         * overlay.scale
-                )
-
-            overlay
-                .view
-                .setContentImage(
-                    image
                 )
 
             let previousFocus =
@@ -7007,7 +7159,7 @@ final class AppDelegate:
 
                     overlay
                         .view
-                        .contentImageView
+                        .contentContainerView
                         .animator()
                         .alphaValue =
                             1
