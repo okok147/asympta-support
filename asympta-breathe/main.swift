@@ -3491,8 +3491,15 @@ final class AppDelegate:
     private var menu:
         NSMenu!
 
-    private var tickTimer:
+    private var idleTimer:
         Timer?
+
+    private let activityMonitor =
+        ActivityMonitor()
+
+    private var workspaceObservers:
+        [NSObjectProtocol] =
+            []
 
     private var preparationTask:
         Task<Void, Never>?
@@ -3549,7 +3556,15 @@ final class AppDelegate:
                 )
 
             if !newValue {
+                idleTimer?
+                    .invalidate()
+
+                idleTimer =
+                    nil
+
                 breatheInImmediately()
+            } else {
+                scheduleIdleTimer()
             }
 
             rebuildMenu()
@@ -3816,8 +3831,11 @@ final class AppDelegate:
         _ notification:
             Notification
     ) {
-        tickTimer?
+        idleTimer?
             .invalidate()
+
+        activityMonitor
+            .stop()
 
         preparationTask?
             .cancel()
@@ -3832,6 +3850,19 @@ final class AppDelegate:
             .stop()
 
         breatheInImmediately()
+
+        for observer
+            in workspaceObservers {
+            NSWorkspace
+                .shared
+                .notificationCenter
+                .removeObserver(
+                    observer
+                )
+        }
+
+        workspaceObservers
+            .removeAll()
     }
 
     private func beginPermissionFlow() async {
@@ -3994,11 +4025,14 @@ final class AppDelegate:
 
         breatheInImmediately()
 
-        tickTimer?
+        idleTimer?
             .invalidate()
 
-        tickTimer =
+        idleTimer =
             nil
+
+        activityMonitor
+            .stop()
 
         if let statusItem {
             NSStatusBar
@@ -4104,26 +4138,26 @@ final class AppDelegate:
             buildStatusItem()
         }
 
-        if tickTimer == nil {
-            tickTimer =
-                Timer
-                    .scheduledTimer(
-                        withTimeInterval:
-                            0.12,
-                        repeats:
-                            true
-                    ) {
-                        [weak self]
-                        _ in
+        activityMonitor.onActivity = {
+            [weak self]
+            kind in
 
-                        Task {
-                            @MainActor in
+            Task {
+                @MainActor in
 
-                            self?
-                                .tick()
-                        }
-                    }
+                self?
+                    .handleActivity(
+                        kind
+                    )
+            }
         }
+
+        _ =
+            activityMonitor
+                .start()
+
+        installWorkspaceObservers()
+        scheduleIdleTimer()
 
         mainStarted =
             true
