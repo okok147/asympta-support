@@ -47,15 +47,18 @@ cat > "$CONTENTS/Info.plist" <<'PLIST'
   <key>CFBundleIconFile</key><string>AppIcon</string>
   <key>CFBundleIdentifier</key><string>com.asympta.breathe</string>
   <key>CFBundleInfoDictionaryVersion</key><string>6.0</string>
+  <key>CFBundleGetInfoString</key><string>Asympta Breathe 1.14.0</string>
   <key>CFBundleName</key><string>Asympta Breathe</string>
   <key>CFBundlePackageType</key><string>APPL</string>
   <key>CFBundleShortVersionString</key><string>1.14.0</string>
   <key>CFBundleVersion</key><string>145</string>
   <key>LSMinimumSystemVersion</key><string>14.0</string>
+  <key>LSApplicationCategoryType</key><string>public.app-category.productivity</string>
   <key>LSUIElement</key><true/>
   <key>NSHighResolutionCapable</key><true/>
+  <key>NSHumanReadableCopyright</key><string>© 2026 Asympta. All rights reserved.</string>
   <key>NSScreenCaptureUsageDescription</key>
-  <string>Asympta Breathe captures the frontmost app window so it can gently breathe out during inactivity.</string>
+  <string>Asympta Breathe uses Screen Recording to show live, dimmed previews of your open windows while they rest.</string>
 </dict>
 </plist>
 PLIST
