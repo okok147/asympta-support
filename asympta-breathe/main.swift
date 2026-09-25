@@ -4825,11 +4825,6 @@ final class AppDelegate:
             return nil
         }
 
-        let ownPID =
-            ProcessInfo
-                .processInfo
-                .processIdentifier
-
         for info
             in list {
             guard
@@ -4842,8 +4837,6 @@ final class AppDelegate:
                         as? NSNumber
                     )?
                     .int32Value,
-                pid
-                    != ownPID,
                 let layer =
                     (
                         info[
