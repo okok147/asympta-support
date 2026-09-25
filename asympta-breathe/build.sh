@@ -50,7 +50,7 @@ cat > "$CONTENTS/Info.plist" <<'PLIST'
   <key>CFBundleName</key><string>Asympta Breathe</string>
   <key>CFBundlePackageType</key><string>APPL</string>
   <key>CFBundleShortVersionString</key><string>1.14.0</string>
-  <key>CFBundleVersion</key><string>144</string>
+  <key>CFBundleVersion</key><string>145</string>
   <key>LSMinimumSystemVersion</key><string>14.0</string>
   <key>LSUIElement</key><true/>
   <key>NSHighResolutionCapable</key><true/>
