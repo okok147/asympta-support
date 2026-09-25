@@ -8,10 +8,14 @@ APP="$OUT/Asympta Breathe.app"
 CONTENTS="$APP/Contents"
 MACOS="$CONTENTS/MacOS"
 RES="$CONTENTS/Resources"
+FRAMEWORKS="$CONTENTS/Frameworks"
 SDK="$(xcrun --sdk macosx --show-sdk-path)"
 
 rm -rf "$OUT" "$BUILD"
-mkdir -p "$MACOS" "$RES" "$BUILD"
+mkdir -p "$MACOS" "$RES" "$FRAMEWORKS" "$BUILD"
+
+SPARKLE_DIST="$(bash "$ROOT/fetch_sparkle.sh")"
+SPARKLE_FRAMEWORK="$SPARKLE_DIST/Sparkle.framework"
 
 COMMON=(
   -swift-version 5
@@ -27,6 +31,10 @@ COMMON=(
   -framework CoreImage
   -framework CoreMedia
   -framework CoreVideo
+  -F "$SPARKLE_DIST"
+  -framework Sparkle
+  -Xlinker -rpath
+  -Xlinker "@executable_path/../Frameworks"
 )
 
 xcrun swiftc "${COMMON[@]}" -target arm64-apple-macos14.0   "$ROOT/main.swift" -o "$BUILD/AsymptaBreathe-arm64"
@@ -35,6 +43,8 @@ xcrun swiftc "${COMMON[@]}" -target x86_64-apple-macos14.0   "$ROOT/main.swift" 
 
 lipo -create   "$BUILD/AsymptaBreathe-arm64"   "$BUILD/AsymptaBreathe-x86_64"   -output "$MACOS/AsymptaBreathe"
 chmod +x "$MACOS/AsymptaBreathe"
+
+ditto "$SPARKLE_FRAMEWORK" "$FRAMEWORKS/Sparkle.framework"
 
 cat > "$CONTENTS/Info.plist" <<'PLIST'
 <?xml version="1.0" encoding="UTF-8"?>
@@ -47,21 +57,26 @@ cat > "$CONTENTS/Info.plist" <<'PLIST'
   <key>CFBundleIconFile</key><string>AppIcon</string>
   <key>CFBundleIdentifier</key><string>com.asympta.breathe</string>
   <key>CFBundleInfoDictionaryVersion</key><string>6.0</string>
-  <key>CFBundleGetInfoString</key><string>Asympta Breathe 1.14.0</string>
+  <key>CFBundleGetInfoString</key><string>Asympta Breathe 1.15.0</string>
   <key>CFBundleName</key><string>Asympta Breathe</string>
   <key>CFBundlePackageType</key><string>APPL</string>
-  <key>CFBundleShortVersionString</key><string>1.14.0</string>
-  <key>CFBundleVersion</key><string>145</string>
+  <key>CFBundleShortVersionString</key><string>1.15.0</string>
+  <key>CFBundleVersion</key><string>150</string>
   <key>LSMinimumSystemVersion</key><string>14.0</string>
   <key>LSApplicationCategoryType</key><string>public.app-category.productivity</string>
   <key>LSUIElement</key><true/>
   <key>NSHighResolutionCapable</key><true/>
   <key>NSHumanReadableCopyright</key><string>© 2026 Asympta. All rights reserved.</string>
+  <key>SUFeedURL</key><string>https://raw.githubusercontent.com/okok147/Asympta-breathe-releases/main/appcast.xml</string>
   <key>NSScreenCaptureUsageDescription</key>
   <string>Asympta Breathe uses Screen Recording to show live, dimmed previews of your open windows while they rest.</string>
 </dict>
 </plist>
 PLIST
+
+if [[ -n "${SPARKLE_PUBLIC_ED_KEY:-}" ]]; then
+  /usr/libexec/PlistBuddy -c "Add :SUPublicEDKey string $SPARKLE_PUBLIC_ED_KEY" "$CONTENTS/Info.plist"
+fi
 
 cat > "$BUILD/IconMaker.swift" <<'SWIFT'
 import Foundation
@@ -177,14 +192,16 @@ done
 iconutil -c icns "$ICONSET" -o "$RES/AppIcon.icns"
 cp "$BUILD/AppIcon1024.png" "$RES/AppIcon.png"
 
-codesign --force --deep --sign - "$APP"
+codesign --force --deep --sign - "$FRAMEWORKS/Sparkle.framework"
+codesign --force --sign - "$APP"
 
 file "$MACOS/AsymptaBreathe"
 lipo -info "$MACOS/AsymptaBreathe"
 codesign --verify --deep --strict --verbose=2 "$APP"
 plutil -lint "$CONTENTS/Info.plist"
+otool -L "$MACOS/AsymptaBreathe" | grep -q 'Sparkle.framework'
 
 mkdir -p "$OUT/package"
-ditto -c -k --sequesterRsrc --keepParent "$APP" "$OUT/package/Asympta-Breathe-1.14.0.zip"
+ditto -c -k --sequesterRsrc --keepParent "$APP" "$OUT/package/Asympta-Breathe-1.15.0.zip"
 
-echo "Built $OUT/package/Asympta-Breathe-1.14.0.zip"
+echo "Built $OUT/package/Asympta-Breathe-1.15.0.zip"
