@@ -8,3 +8,8 @@ auto-renewal, restore, manage and Apple EULA. Clearly labeled TestFlight prepara
 not public approval. Privacy includes local/synchronizable Keychain month record,
 no question/outcome transmission, Apple transaction checks, persistence after app
 deletion and separate subscription cancellation. Existing Writing pages untouched.
+
+0402 preview adds Ultimate Lifetime (NON_CONSUMABLE,USA99.99 one-time) beside
+monthly. Both restore through Apple. Luck/Wealth/Love is a decorative theme with
+no outcome guarantee. An active monthly renewal requires separate user management
+even after lifetime purchase; explicitly disclosed. No additional data collection.
