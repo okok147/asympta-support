@@ -13,3 +13,9 @@ deletion and separate subscription cancellation. Existing Writing pages untouche
 monthly. Both restore through Apple. Luck/Wealth/Love is a decorative theme with
 no outcome guarantee. An active monthly renewal requires separate user management
 even after lifetime purchase; explicitly disclosed. No additional data collection.
+
+0403 latest pricing: USA9.99 monthly,99.99 yearly,399.99 permanent lifetime.
+Yearly adds constellation/orbit artwork; lifetime adds triple cosmic orbits.
+Only symbolic artwork is upgraded, not probability or real-world fortune. Same
+non-consumable identity preserves earlier verified lifetime purchases. Subscriptions
+auto-renew per selected monthly/yearly term; separate renewal management retained.
