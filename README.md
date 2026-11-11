@@ -9,3 +9,5 @@ Static support and privacy pages for the Asympta App Store listing.
 No app source code, credentials, analytics, or private contact information are included.
 
 Decision support: /decision/; privacy: /decision/privacy/. Existing Writing routes remain unchanged.
+
+Reminder support: /reminder/; privacy: /reminder/privacy/.
