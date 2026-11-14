@@ -1,0 +1,11 @@
+:root{color-scheme:light;background:#edf0e8;color:#26363a;font-family:system-ui,-apple-system,sans-serif;line-height:1.65}
+body{margin:0;background:linear-gradient(166deg,#f7f5ec,#e7ede8);min-height:100vh}
+main{max-width:44rem;margin:auto;padding:4rem 1.5rem 3rem}
+header{border-bottom:1px solid #adbab1;padding-bottom:1.6rem;margin-bottom:2rem}
+h1{font-family:Georgia,serif;font-size:clamp(2.9rem,9vw,5rem);font-weight:400;letter-spacing:-.045em;line-height:1;margin:.5rem 0 1rem}
+h2{font-size:1.25rem;margin-top:2rem}
+p,ol{max-width:66ch}
+a{color:#315c56;text-underline-offset:.2em}a:focus-visible{outline:2px solid currentColor;outline-offset:4px}
+nav{display:flex;flex-wrap:wrap;gap:.6rem 1.4rem}
+section[lang="en"]{margin-top:3rem;padding-top:1rem;border-top:1px solid #adbab1}
+footer{margin-top:3rem;font-size:.9rem}
