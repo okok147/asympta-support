@@ -1,0 +1,31 @@
+:root {
+  color-scheme: light;
+  color: #302b24;
+  background: #f3eddf;
+  font: 1.0625rem/1.7 Georgia, "Songti TC", serif;
+}
+
+body {
+  max-width: 42rem;
+  margin: 0 auto;
+  padding: clamp(1.5rem, 6vw, 4rem);
+}
+
+nav, footer {
+  font: .9rem/1.6 system-ui, sans-serif;
+}
+
+nav, footer, section + section {
+  border-top: 1px solid #b9ae9a;
+  margin-top: 2.5rem;
+  padding-top: 1.25rem;
+}
+
+h1, h2 {
+  font-weight: 500;
+  line-height: 1.2;
+}
+
+h1 { font-size: clamp(2rem, 7vw, 3.2rem); }
+h2 { font-size: 1.4rem; }
+a { color: #63502c; text-underline-offset: .18em; }
